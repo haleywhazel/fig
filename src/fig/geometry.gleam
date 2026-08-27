@@ -12,8 +12,36 @@
 // PUBLIC TYPES
 // =============================================================================
 
-pub type Geometry {
-  Padding(top: Float, right: Float, bottom: Float, left: Float)
-  Point(x: Float, y: Float)
-  Rectangle(x: Float, y: Float, width: Float, height: Float)
+pub type Command {
+  // ArcTo(point: Point, radius: Float)
+  Close
+  // CurveTo
+  LineTo(point: Point)
+  MoveTo(point: Point)
 }
+
+pub type Geometry {
+  Path(commands: List(Command), role: GeometryRole)
+  Rectangle(points: #(Point, Point), role: GeometryRole)
+  Text(at: Point, content: String, role: TextRole)
+}
+
+pub type GeometryRole {
+  Axis
+  Grid
+  Series(index: Int)
+  TickMark
+}
+
+pub type Point {
+  Point(x: Float, y: Float)
+}
+
+pub type TextRole {
+  TickLabel
+}
+// =============================================================================
+// PUBLIC FUNCTIONS
+// =============================================================================
+
+// pub fn

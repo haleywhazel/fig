@@ -4,6 +4,7 @@
 // IMPORTS
 // =============================================================================
 
+import gleam/float
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -15,25 +16,28 @@ import fig/geometry.{type Geometry}
 // PUBLIC TYPES
 // =============================================================================
 
+/// A standard chart, use [`new`](#new) instead to avoid having to fill out all
+/// the options. `a` and `b` are the types of the x- and y-axis.
 pub type Chart {
-  Chart(chart_type: Option(ChartType), series: List(Series))
+  Chart(series: List(Series), chart_area: #(Float, Float))
 }
 
-pub type ChartType {
-  LineChart
+/// Data types, construct with [`numeric`](#numeric) or
+/// [`categorical`](#categorical).
+pub type Data {
+  /// Set up numeric data from `List(#(Float, Float))`, convert to this format
+  /// first, even if the data should be integers.
+  Numeric(List(#(Float, Float)))
+
+  /// Set up categorical data from `List(#(String, Float))`, convert to this
+  /// format first.
+  Categorical(List(#(String, Float)))
 }
 
-pub type Datum {
-  FloatDatum(x: Float, y: Float)
-}
-
+/// A data series.
 pub type Series {
-  Series(label: String, data: List(Datum))
+  LineSeries(label: String, data: Data)
 }
-
-// pub type Interval {
-//   Interval(minimum: Float, maximum: Float)
-// }
 
 // pub type Scale {
 //   Linear(domain: Interval, range: Interval)
@@ -41,8 +45,14 @@ pub type Series {
 // }
 
 // =============================================================================
-// PRIVATE TYPES
+// PUBLIC OPAQUE TYPES
 // =============================================================================
+
+/// Any numerical (`Float`) interval between a minimum or a maximum. Construct
+/// with [`interval`](#interval).
+pub opaque type Interval {
+  Interval(minimum: Float, maximum: Float)
+}
 
 // =============================================================================
 // PUBLIC FUNCTIONS
@@ -57,37 +67,83 @@ pub fn add_series(chart: Chart, series: Series) -> Chart {
 pub fn delete_series(chart: Chart, series_label: String) -> Chart {
   Chart(
     ..chart,
-    series: list.drop_while(chart.series, fn(series) {
-      series.label == series_label
+    series: list.filter(chart.series, fn(series) {
+      series.label != series_label
     }),
   )
 }
 
-pub fn generate(chart: Chart) -> List(Geometry) {
-  case chart.chart_type {
-    Some(LineChart) -> []
-    None -> []
+/// Construct an interval.
+pub fn interval(a: Float, b: Float) -> Interval {
+  case a <=. b {
+    True -> Interval(a, b)
+    False -> Interval(b, a)
   }
 }
 
-pub fn new() -> Chart {
-  Chart(chart_type: None, series: [])
+pub fn generate(chart: Chart) -> List(Geometry) {
+  []
 }
 
-pub fn set_type(chart: Chart, chart_type: ChartType) -> Chart {
-  Chart(..chart, chart_type: Some(chart_type))
+pub fn new() -> Chart {
+  Chart(series: [], chart_area: #(640.0, 400.0))
+}
+
+// =============================================================================
+// PUBLIC INTERNAL FUNCTIONS
+// =============================================================================
+
+/// Gives the extents of a series. Returns a tuple of [`Interval`](#Interval) as
+/// options, where the tuple content will be `None` if not a numeric type.
+@internal
+pub fn extents(data: Data) -> #(Option(Interval), Option(Interval)) {
+  case data {
+    Numeric([]) | Categorical([]) -> #(None, None)
+
+    // To make things easier to read independent and dependent are shortened to
+    // i and d. For typical line graphs, this would be values on the x & y axes.
+    Numeric([#(i, d), ..rest]) -> {
+      let #(i_min, i_max, d_min, d_max) =
+        list.fold(rest, #(i, i, d, d), fn(acc, point) {
+          let #(i_min, i_max, d_min, d_max) = acc
+          let #(i, d) = point
+          #(
+            float.min(i_min, i),
+            float.max(i_max, i),
+            float.min(d_min, d),
+            float.max(d_max, d),
+          )
+        })
+      #(Some(Interval(i_min, i_max)), Some(Interval(d_min, d_max)))
+    }
+
+    Categorical([#(_, d), ..rest]) -> {
+      let #(d_min, d_max) =
+        list.fold(rest, #(d, d), fn(acc, point) {
+          let #(d_min, d_max) = acc
+          let #(_, d) = point
+          #(float.min(d_min, d), float.max(d_max, d))
+        })
+      #(None, Some(Interval(d_min, d_max)))
+    }
+  }
+}
+
+/// Union over two [`Interval`](#Interval).
+@internal
+pub fn interval_union(a: Interval, b: Interval) {
+  let #(Interval(a_min, a_max), Interval(b_min, b_max)) = #(a, b)
+  Interval(float.min(a_min, b_min), float.max(a_max, b_max))
 }
 
 pub fn main() -> Nil {
-  let series =
-    Series("new_series", [FloatDatum(1.0, 2.0), FloatDatum(2.0, 3.0)])
+  let series = LineSeries("new_series", Numeric([#(1.0, 2.0), #(2.0, 3.0)]))
 
   let chart =
     new()
     |> add_series(series)
-    |> set_type(LineChart)
 
-  chart.chart_type
+  chart.series
   |> string.inspect
   |> io.println
 
