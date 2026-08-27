@@ -28,9 +28,14 @@ pub type Geometry {
 
 pub type GeometryRole {
   Axis
+  Display
   Grid
   Series(index: Int)
   TickMark
+}
+
+pub type Padding {
+  Padding(top: Float, right: Float, bottom: Float, left: Float)
 }
 
 pub type Point {

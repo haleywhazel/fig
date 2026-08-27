@@ -1,5 +1,3 @@
-import gleam/option.{None, Some}
-
 import fig
 import gleeunit
 
@@ -12,7 +10,7 @@ pub fn main() -> Nil {
 // =============================================================================
 
 pub fn add_series_test() {
-  let series = fig.LineSeries("0", fig.Numeric([#(1.0, 2.0)]))
+  let series = fig.Series("0", fig.numerical([#(1.0, 2.0)]))
   let chart =
     fig.new()
     |> fig.add_series(series)
@@ -21,7 +19,7 @@ pub fn add_series_test() {
 }
 
 pub fn delete_series_test() {
-  let series = fig.LineSeries("0", fig.Numeric([#(1.0, 2.0)]))
+  let series = fig.Series("0", fig.numerical([#(1.0, 2.0)]))
   let chart =
     fig.new()
     |> fig.add_series(series)
@@ -31,8 +29,8 @@ pub fn delete_series_test() {
 }
 
 pub fn delete_multiple_series_test() {
-  let series0 = fig.LineSeries("0", fig.Numeric([]))
-  let series1 = fig.LineSeries("1", fig.Numeric([]))
+  let series0 = fig.Series("0", fig.numerical([]))
+  let series1 = fig.Series("1", fig.numerical([]))
 
   let chart =
     fig.new()
@@ -48,31 +46,59 @@ pub fn delete_multiple_series_test() {
 // EXTENT TESTS
 // =============================================================================
 
-pub fn extents_test() {
-  let empty_numeric_series = fig.Numeric([])
-  let empty_categorical_series = fig.Categorical([])
+pub fn empty_extents_test() {
+  let empty_numeric_series = fig.numerical([])
+  let empty_categorical_series = fig.categorical([])
 
-  assert fig.extents(empty_numeric_series) == #(None, None)
-  assert fig.extents(empty_categorical_series) == #(None, None)
-
-  let numeric_series = fig.Numeric([#(0.0, 0.0), #(-0.1, 0.0)])
-
-  assert fig.extents(numeric_series)
-    == #(Some(fig.interval(-0.1, 0.0)), Some(fig.interval(0.0, 0.0)))
-
-  let categorical_series =
-    fig.Categorical([#("a", -0.3), #("b", 0.0), #("c", 5.2)])
-
-  assert fig.extents(categorical_series)
-    == #(None, Some(fig.interval(-0.3, 5.2)))
+  assert fig.extents(empty_numeric_series) == []
+  assert fig.extents(empty_categorical_series) == []
 }
 
-pub fn interval_union_test() {
-  let #(interval_a, interval_b) = #(
-    fig.interval(-0.2, 5.0),
-    fig.interval(-6.0, 2.0),
+pub fn numerical_extents_test() {
+  let numeric_series = fig.numerical([#(0.0, 0.0), #(-0.1, 0.0)])
+
+  assert fig.extents(numeric_series)
+    == [
+      fig.NumericalDomain(fig.interval(-0.1, 0.0)),
+      fig.NumericalDomain(fig.interval(0.0, 0.0)),
+    ]
+}
+
+pub fn categorical_extents_test() {
+  let categorical_series =
+    fig.categorical([#("a", -0.3), #("b", 0.0), #("c", 5.2)])
+
+  assert fig.extents(categorical_series)
+    == [
+      fig.CategoricalDomain(["a", "b", "c"]),
+      fig.NumericalDomain(fig.interval(-0.3, 5.2)),
+    ]
+}
+
+// =============================================================================
+// DOMAIN UNION TESTS
+// =============================================================================
+
+pub fn empty_domain_union_test() {
+  assert fig.domain_union(fig.EmptyDomain, fig.EmptyDomain) == fig.EmptyDomain
+}
+
+pub fn numerical_domain_union_test() {
+  let #(domain_a, domain_b) = #(
+    fig.NumericalDomain(fig.interval(-0.2, 5.0)),
+    fig.NumericalDomain(fig.interval(-6.0, 2.0)),
   )
-  assert fig.interval_union(interval_a, interval_b) == fig.interval(-6.0, 5.0)
+  assert fig.domain_union(domain_a, domain_b)
+    == fig.NumericalDomain(fig.interval(-6.0, 5.0))
+}
+
+pub fn categorical_domain_union_test() {
+  let #(domain_a, domain_b) = #(
+    fig.CategoricalDomain(["a", "b", "c"]),
+    fig.CategoricalDomain(["d", "e"]),
+  )
+  assert fig.domain_union(domain_a, domain_b)
+    == fig.CategoricalDomain(["a", "b", "c", "d", "e"])
 }
 
 // =============================================================================

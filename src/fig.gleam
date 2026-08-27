@@ -12,33 +12,35 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 
-import fig/geometry.{type Geometry}
+import fig/geometry
 
 // =============================================================================
 // PUBLIC TYPES
 // =============================================================================
 
+/// This type is used to allow for custom dimension data types while still
+/// providing type checking across series. You probably shouldn't need to use
+/// this.
+pub type And(head, tail)
+
 /// A standard chart, use [`new`](#new) instead to avoid having to fill out all
-/// the options. `a` and `b` are the types of the x- and y-axis.
-pub type Chart {
-  Chart(series: List(Series), chart_area: #(Float, Float))
+/// the options. `a` represents the type of the data.
+pub type Chart(a) {
+  Chart(
+    series: List(Series(a)),
+    area: #(Float, Float),
+    padding: geometry.Padding,
+  )
 }
 
-/// Data types, construct with [`numeric`](#numeric) or
-/// [`categorical`](#categorical).
-pub type Data {
-  /// Set up numeric data from `List(#(Float, Float))`, convert to this format
-  /// first, even if the data should be integers.
-  Numeric(List(#(Float, Float)))
-
-  /// Set up categorical data from `List(#(String, Float))`, convert to this
-  /// format first.
-  Categorical(List(#(String, Float)))
-}
+/// This type is used to allow for custom dimension data types while still
+/// providing type checking across series. You probably shouldn't need to use
+/// this.
+pub type Empty
 
 /// A data series.
-pub type Series {
-  LineSeries(label: String, data: Data)
+pub type Series(a) {
+  Series(label: String, data: Data(a))
 }
 
 // pub type Scale {
@@ -49,6 +51,29 @@ pub type Series {
 // =============================================================================
 // PUBLIC OPAQUE TYPES
 // =============================================================================
+
+/// Data types, construct with [`numerical`](#numerical) or
+/// [`categorical`](#categorical). Kept opaque to let the axis type checking
+/// work. Phantom type `b` indicates the shape of the specific holding within
+/// the data wrapper, see [`datum`](#datum) and [`with`](#with) for more info
+/// on custom data types.
+pub opaque type Data(b) {
+  Data(points: List(Datum(b)))
+}
+
+/// A single data point. Kept opaque to let the axis type checking work.
+/// Phantom type `b` indicates the shape of the specific holding within the
+/// data wrapper, see [`datum`](#datum) and [`with`](#with) for more info on
+/// custom data types.
+pub opaque type Datum(b) {
+  Datum(dimensions: List(Value))
+}
+
+// Wrapper over a value in a dimension with a phantom type `c` to allow for type
+// checking over different series of data.
+pub opaque type Dimension(c) {
+  Dimension(value: Value)
+}
 
 /// Any numerical (`Float`) interval between a minimum or a maximum. Construct
 /// with [`interval`](#interval).
@@ -64,32 +89,142 @@ pub opaque type TickSpacing {
   Divide(Float)
 }
 
-/// Tick values are basically each index multiplied/divided by spacing.
+/// Tick values are basically each index multiplied/divided by spacing for
+/// numerical domains.
 pub opaque type TickRecipe {
   TickRecipe(first_index: Int, last_index: Int, spacing: TickSpacing)
+}
+
+// =============================================================================
+// PUBLIC INTERNAL TYPES
+// =============================================================================
+
+@internal
+pub type Domain {
+  CategoricalDomain(List(String))
+  EmptyDomain
+  NumericalDomain(Interval)
 }
 
 // =============================================================================
 // PRIVATE TYPES
 // =============================================================================
 
+type Value {
+  Number(Float)
+  Category(String)
+}
+
 // =============================================================================
 // PUBLIC FUNCTIONS
 // =============================================================================
 
 /// Add a [`Series`](#Series) (prepends onto `chart.series`).
-pub fn add_series(chart: Chart, series: Series) -> Chart {
+pub fn add_series(chart: Chart(a), series: Series(a)) -> Chart(a) {
   Chart(..chart, series: [series, ..chart.series])
 }
 
+/// Wrap a string or label or category within a [`Dimension`](#Dimension) type
+/// when defining custom data dimensions.
+pub fn category(value: String) -> Dimension(String) {
+  Dimension(Category(value))
+}
+
+/// Create categorical data with `String` on the x-axis and `Float` on the
+/// y-axis.
+pub fn categorical(
+  points: List(#(String, Float)),
+) -> Data(And(Float, And(String, Empty))) {
+  data(
+    list.map(points, fn(point) {
+      let #(x, y) = point
+      datum() |> with(category(x)) |> with(number(y))
+    }),
+  )
+}
+
+/// Returns a [`Datum(Empty)`](#Datum) to allow you to define custom data shapes
+/// when chained with [`with`](#with).
+///
+/// Example with two categorical values of a single datum:
+///
+/// ```
+/// datum() |> with(category(x)) |> with(category(y))
+/// ```
+pub fn datum() -> Datum(Empty) {
+  Datum([])
+}
+
+/// Takes a datum and then adds an additional value to the list within datum.
+/// For custom data types, this can be chained both on top of an existing one
+/// or to begin with, use (`datum`)[#datum]
+///
+/// Example with two categorical values of a single datum:
+///
+/// ```
+/// datum() |> with(category(x)) |> with(category(y))
+/// ```
+pub fn with(
+  datum: Datum(tail),
+  dimension: Dimension(head),
+) -> Datum(And(head, tail)) {
+  Datum([dimension.value, ..datum.dimensions])
+}
+
+/// Create data out of a list of [`Datum`](#Datum)s.
+pub fn data(points: List(Datum(a))) -> Data(a) {
+  Data(points)
+}
+
 /// Delete all instances of [`Series`](#Series) with `label` of `series_label`.
-pub fn delete_series(chart: Chart, series_label: String) -> Chart {
+pub fn delete_series(chart: Chart(a), series_label: String) -> Chart(a) {
   Chart(
     ..chart,
     series: list.filter(chart.series, fn(series) {
       series.label != series_label
     }),
   )
+}
+
+/// Union over two [`Domain`](#Domain).
+///
+/// Invalid operations result in EmptyDomain.
+pub fn domain_union(domain_a: Domain, domain_b: Domain) {
+  case domain_a, domain_b {
+    EmptyDomain, EmptyDomain -> EmptyDomain
+    EmptyDomain, NumericalDomain(_) -> domain_b
+    NumericalDomain(_), EmptyDomain -> domain_a
+    EmptyDomain, CategoricalDomain(_) -> domain_b
+    CategoricalDomain(_), EmptyDomain -> domain_a
+    NumericalDomain(interval_a), NumericalDomain(interval_b) -> {
+      let #(Interval(a_min, a_max), Interval(b_min, b_max)) = #(
+        interval_a,
+        interval_b,
+      )
+      NumericalDomain(Interval(float.min(a_min, b_min), float.max(a_max, b_max)))
+    }
+    CategoricalDomain(categories_a), CategoricalDomain(categories_b) ->
+      CategoricalDomain(list.append(categories_a, categories_b))
+    _, _ -> EmptyDomain
+  }
+}
+
+/// Gives the extents of a series in terms of a [`Domain`](#Domain). For
+/// numerical axes, this would be the minimum and maximum, where as for
+/// categorical ones it would be all the strings.
+pub fn extents(data: Data(b)) -> List(Domain) {
+  data.points
+  |> list.map(fn(point) { list.reverse(point.dimensions) })
+  |> list.transpose
+  |> list.map(fn(values: List(Value)) -> Domain {
+    case values {
+      [Number(value), ..rest] ->
+        NumericalDomain(numerical_domain(rest, value, value))
+      [Category(category), ..rest] ->
+        CategoricalDomain(categorical_domain(rest, [category]))
+      [] -> EmptyDomain
+    }
+  })
 }
 
 /// Construct an interval, always arranges it so that the minimum value is
@@ -101,7 +236,42 @@ pub fn interval(a: Float, b: Float) -> Interval {
   }
 }
 
-pub fn generate(chart: Chart) -> List(Geometry) {
+pub fn generate(chart: Chart(a)) -> List(geometry.Geometry) {
+  // extents of each series
+  let extents =
+    chart.series
+    |> list.map(fn(series) { extents(series.data) })
+
+  extents
+  |> list.transpose()
+  |> string.inspect
+  |> io.println
+
+  // let #(x_interval, y_interval) = #(combine_intervals(x_extents), combine_intervals(y_extents))
+
+  // // need a config branch here for custom tick counts and strict ticks
+  // let x_tick_count = float.round(chart.area.0 /. 50.0)
+  // let y_tick_count = float.round(chart.area.1 /. 50.0)
+
+  // let x_ticks = generate_ticks(x_interval, x_tick_count)
+
+  // #(x_interval, y_interval)
+  // |> string.inspect
+  // |> io.print
+
+  // Setup overall display area
+  // let display =
+  //   geometry.Rectangle(
+  //     points: #(
+  //       geometry.Point(0.0 -. chart.padding.left, 0.0 -. chart.padding.bottom),
+  //       geometry.Point(
+  //         chart.area.0 +. chart.padding.right,
+  //         chart.area.1 +. chart.padding.top,
+  //       ),
+  //     ),
+  //     role: geometry.Display,
+  //   )
+
   []
 }
 
@@ -117,8 +287,32 @@ pub fn generate_ticks(
   generate_ticks_recursive(interval, rough_count, None, 10)
 }
 
-pub fn new() -> Chart {
-  Chart(series: [], chart_area: #(640.0, 400.0))
+/// Create a new chart with default settings.
+pub fn new() -> Chart(a) {
+  Chart(
+    series: [],
+    area: #(640.0, 400.0),
+    padding: geometry.Padding(40.0, 40.0, 40.0, 40.0),
+  )
+}
+
+/// Wrap a number within a [`Dimension`](#Dimension) type when defining custom
+/// data dimensions.
+pub fn number(value: Float) -> Dimension(Float) {
+  Dimension(Number(value))
+}
+
+/// Create categorical data with `Float` on the x-axis and `Float` on the
+/// y-axis.
+pub fn numerical(
+  points: List(#(Float, Float)),
+) -> Data(And(Float, And(Float, Empty))) {
+  data(
+    list.map(points, fn(point) {
+      let #(x, y) = point
+      datum() |> with(number(x)) |> with(number(y))
+    }),
+  )
 }
 
 pub fn tick_values(tick_recipe: TickRecipe) -> List(Float) {
@@ -134,55 +328,20 @@ pub fn tick_values(tick_recipe: TickRecipe) -> List(Float) {
 }
 
 // =============================================================================
-// PUBLIC INTERNAL FUNCTIONS
-// =============================================================================
-
-/// Gives the extents of a series. Returns a tuple of [`Interval`](#Interval) as
-/// options, where the tuple content will be `None` if not a numeric type.
-@internal
-pub fn extents(data: Data) -> #(Option(Interval), Option(Interval)) {
-  case data {
-    Numeric([]) | Categorical([]) -> #(None, None)
-
-    // To make things easier to read independent and dependent are shortened to
-    // i and d. For typical line graphs, this would be values on the x & y axes.
-    Numeric([#(i, d), ..rest]) -> {
-      let #(i_min, i_max, d_min, d_max) =
-        list.fold(rest, #(i, i, d, d), fn(acc, point) {
-          let #(i_min, i_max, d_min, d_max) = acc
-          let #(i, d) = point
-          #(
-            float.min(i_min, i),
-            float.max(i_max, i),
-            float.min(d_min, d),
-            float.max(d_max, d),
-          )
-        })
-      #(Some(Interval(i_min, i_max)), Some(Interval(d_min, d_max)))
-    }
-
-    Categorical([#(_, d), ..rest]) -> {
-      let #(d_min, d_max) =
-        list.fold(rest, #(d, d), fn(acc, point) {
-          let #(d_min, d_max) = acc
-          let #(_, d) = point
-          #(float.min(d_min, d), float.max(d_max, d))
-        })
-      #(None, Some(Interval(d_min, d_max)))
-    }
-  }
-}
-
-/// Union over two [`Interval`](#Interval).
-@internal
-pub fn interval_union(a: Interval, b: Interval) {
-  let #(Interval(a_min, a_max), Interval(b_min, b_max)) = #(a, b)
-  Interval(float.min(a_min, b_min), float.max(a_max, b_max))
-}
-
-// =============================================================================
 // PRIVATE FUNCTIONS
 // =============================================================================
+
+fn categorical_domain(values: List(Value), acc: List(String)) -> List(String) {
+  case values {
+    [] -> list.reverse(acc)
+    [Category(category), ..rest] ->
+      case list.contains(acc, category) {
+        True -> categorical_domain(rest, acc)
+        False -> categorical_domain(rest, [category, ..acc])
+      }
+    [_, ..rest] -> categorical_domain(rest, acc)
+  }
+}
 
 fn generate_ticks_recursive(
   interval: Interval,
@@ -191,10 +350,11 @@ fn generate_ticks_recursive(
   iterations_remaining: Int,
 ) -> #(Interval, TickRecipe) {
   let tick_recipe = generate_tick_recipe(interval, rough_count)
+  let spacing = tick_recipe.spacing
 
-  case iterations_remaining, previous {
+  case iterations_remaining, previous == Some(spacing) {
     0, _ -> #(interval, tick_recipe)
-    _, Some(_) -> #(interval, tick_recipe)
+    _, True -> #(interval, tick_recipe)
     _, _ -> {
       let widened = case tick_recipe.spacing {
         Multiply(spacing) ->
@@ -295,18 +455,31 @@ fn generate_tick_recipe(interval: Interval, rough_count: Int) -> TickRecipe {
   }
 }
 
+fn numerical_domain(
+  values: List(Value),
+  minimum: Float,
+  maximum: Float,
+) -> Interval {
+  case values {
+    [] -> Interval(minimum, maximum)
+    [Number(value), ..rest] ->
+      numerical_domain(
+        rest,
+        float.min(minimum, value),
+        float.max(maximum, value),
+      )
+    [_, ..rest] -> numerical_domain(rest, minimum, maximum)
+  }
+}
+
 pub fn main() -> Nil {
-  let series = LineSeries("new_series", Numeric([#(1.0, 2.0), #(2.0, 3.0)]))
+  let series = Series("new_series", numerical([#(4.0, 2.0), #(1.0, 3.0)]))
+  let series1 = Series("new_series", numerical([#(4.0, -3.0), #(5.0, 1.0)]))
 
-  let chart =
-    new()
-    |> add_series(series)
+  new()
+  |> add_series(series)
+  |> add_series(series1)
+  |> generate()
 
-  chart.series
-  |> string.inspect
-  |> io.println
-
-  generate(chart)
-  |> string.inspect
-  |> io.println
+  Nil
 }
