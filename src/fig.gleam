@@ -193,7 +193,8 @@ fn generate_ticks_recursive(
   let tick_recipe = generate_tick_recipe(interval, rough_count)
 
   case iterations_remaining, previous {
-    0, Some(_) -> #(interval, tick_recipe)
+    0, _ -> #(interval, tick_recipe)
+    _, Some(_) -> #(interval, tick_recipe)
     _, _ -> {
       let widened = case tick_recipe.spacing {
         Multiply(spacing) ->
