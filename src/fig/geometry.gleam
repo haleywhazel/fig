@@ -4,6 +4,9 @@
 //// and functions in this module to layout your own scene or modify the
 //// generated scenes.
 
+import gleam/float
+import gleam/list
+
 // =============================================================================
 // IMPORTS
 // =============================================================================
@@ -39,7 +42,7 @@ pub type Padding {
 }
 
 pub type Point {
-  Point(x: Float, y: Float)
+  Point(coordinates: List(Float))
 }
 
 pub type TextRole {
@@ -50,7 +53,11 @@ pub type TextRole {
 // PUBLIC FUNCTIONS
 // =============================================================================
 
+// not used currently
 pub fn add_points(point1: Point, point2: Point) {
-  // TODO: add tests
-  Point(point1.x +. point2.x, point1.y +. point2.y)
+  Point(list.map2(point1.coordinates, point2.coordinates, float.add))
+}
+
+pub fn axis(starting_at starting: Point, ending_at ending: Point) {
+  Path(commands: [MoveTo(starting), LineTo(ending)], role: Axis)
 }

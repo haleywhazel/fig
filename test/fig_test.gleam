@@ -1,5 +1,7 @@
-import fig
 import gleeunit
+
+import fig
+import fig/geometry
 
 pub fn main() -> Nil {
   gleeunit.main()
@@ -154,4 +156,63 @@ pub fn ticks_multiple_passes_test() {
 
   assert interval == fig.interval(-100.0, -80.0)
   assert fig.tick_values(tick_recipe) == [-100.0, -90.0, -80.0]
+}
+
+// =============================================================================
+// RESOLVE AXIS TESTS
+// =============================================================================
+
+pub fn numerical_positional_axis_test() {
+  let domain = fig.NumericalDomain(fig.interval(-95.0, -89.0))
+  let channel = fig.PositionalChannel(2)
+
+  assert fig.resolve_axis(domain, channel)
+    == fig.ResolvedAxis(fig.NumericalDomain(fig.interval(-100.0, -80.0)), [
+      -100.0,
+      -90.0,
+      -80.0,
+    ])
+}
+
+pub fn categorical_positional_axis_test() {
+  let domain = fig.CategoricalDomain(["a", "b", "c"])
+  let channel = fig.PositionalChannel(2)
+
+  assert fig.resolve_axis(domain, channel)
+    == fig.ResolvedAxis(domain, [
+      0.0,
+      1.0,
+      2.0,
+    ])
+}
+
+// =============================================================================
+// RESOLVE AXIS TESTS
+// =============================================================================
+
+pub fn generate_linear_axis_projection_test() {
+  let resolved_axis =
+    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(-6.0, 2.0)), [
+      -6.0,
+      -5.0,
+      -4.0,
+      -3.0,
+      -2.0,
+      -1.0,
+      0.0,
+      1.0,
+      2.0,
+    ])
+
+  let projection =
+    fig.generate_axis_projection(
+      resolved_axis,
+      starting_at: geometry.Point([-8.0, 6.0]),
+      ending_at: geometry.Point([7.0, 2.0]),
+    )
+
+  assert projection(-6.0) == [-8.0, 6.0]
+  assert projection(2.0) == [7.0, 2.0]
+  assert projection(0.0) == [3.25, 3.0]
+  assert projection(3.0) == [8.875, 1.5]
 }
