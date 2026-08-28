@@ -40,7 +40,11 @@ pub type Positional
 /// A standard chart, use [`new`](#new) instead to avoid having to fill out all
 /// the options. `a` represents the type of the data.
 pub type Chart(shape) {
-  Chart(series: List(Series(shape)), area: #(Float, Float), padding: geometry.Padding)
+  Chart(
+    series: List(Series(shape)),
+    area: #(Float, Float),
+    padding: geometry.Padding,
+  )
 }
 
 /// A domain of values across a single dimension or axis.
@@ -292,7 +296,10 @@ pub fn generate(chart: Chart(shape)) -> List(geometry.Geometry) {
     |> result.unwrap(ResolvedAxis(NumericalDomain(interval(0.0, 1.0)), []))
     |> generate_projection(
       geometry.Point(chart.padding.left, chart.area.1 -. chart.padding.bottom),
-      geometry.Point(chart.area.0 -. chart.padding.right, chart.area.1 -. chart.padding.bottom),
+      geometry.Point(
+        chart.area.0 -. chart.padding.right,
+        chart.area.1 -. chart.padding.bottom,
+      ),
     )
 
   // TODO: add tests
@@ -360,7 +367,11 @@ pub fn line() -> Drawing(
 
 /// Create a new chart with default settings.
 pub fn new() -> Chart(a) {
-  Chart(series: [], area: #(640.0, 400.0), padding: geometry.Padding(20.0, 20.0, 20.0, 20.0))
+  Chart(
+    series: [],
+    area: #(640.0, 400.0),
+    padding: geometry.Padding(20.0, 20.0, 20.0, 20.0),
+  )
 }
 
 /// Wrap a number within a [`Dimension`](#Dimension) type when defining custom
