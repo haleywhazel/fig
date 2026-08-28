@@ -45,6 +45,12 @@ pub type Point {
 pub type TextRole {
   TickLabel
 }
+
 // =============================================================================
 // PUBLIC FUNCTIONS
 // =============================================================================
+
+pub fn add_points(point1: Point, point2: Point) {
+  // TODO: add tests
+  Point(point1.x +. point2.x, point1.y +. point2.y)
+}

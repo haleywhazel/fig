@@ -10,7 +10,7 @@ pub fn main() -> Nil {
 // =============================================================================
 
 pub fn add_series_test() {
-  let series = fig.Series("0", fig.numerical([#(1.0, 2.0)]))
+  let series = fig.Series("0", fig.line(), fig.numerical([#(1.0, 2.0)]))
   let chart =
     fig.new()
     |> fig.add_series(series)
@@ -19,7 +19,7 @@ pub fn add_series_test() {
 }
 
 pub fn delete_series_test() {
-  let series = fig.Series("0", fig.numerical([#(1.0, 2.0)]))
+  let series = fig.Series("0", fig.line(), fig.numerical([#(1.0, 2.0)]))
   let chart =
     fig.new()
     |> fig.add_series(series)
@@ -29,8 +29,8 @@ pub fn delete_series_test() {
 }
 
 pub fn delete_multiple_series_test() {
-  let series0 = fig.Series("0", fig.numerical([]))
-  let series1 = fig.Series("1", fig.numerical([]))
+  let series0 = fig.Series("0", fig.line(), fig.numerical([]))
+  let series1 = fig.Series("1", fig.line(), fig.numerical([]))
 
   let chart =
     fig.new()
@@ -79,10 +79,6 @@ pub fn categorical_extents_test() {
 // DOMAIN UNION TESTS
 // =============================================================================
 
-pub fn empty_domain_union_test() {
-  assert fig.domain_union(fig.EmptyDomain, fig.EmptyDomain) == fig.EmptyDomain
-}
-
 pub fn numerical_domain_union_test() {
   let #(domain_a, domain_b) = #(
     fig.NumericalDomain(fig.interval(-0.2, 5.0)),
@@ -101,40 +97,61 @@ pub fn categorical_domain_union_test() {
     == fig.CategoricalDomain(["a", "b", "c", "d", "e"])
 }
 
+pub fn combine_domain_test() {
+  let series1 =
+    fig.Series("1", fig.line(), fig.categorical([#("a", 0.8), #("b", -0.3)]))
+  let series2 =
+    fig.Series("2", fig.line(), fig.categorical([#("b", 0.2), #("c", 10.0)]))
+  let series3 =
+    fig.Series("3", fig.line(), fig.categorical([#("a", 11.0), #("d", 0.0)]))
+  let series = [series1, series2, series3]
+
+  assert fig.combine_domains(series)
+    == [
+      fig.CategoricalDomain(["a", "b", "c", "d"]),
+      fig.NumericalDomain(fig.interval(-0.3, 11.0)),
+    ]
+}
+
 // =============================================================================
 // TICK GENERATION TESTS
 // =============================================================================
 
 pub fn ticks_basic_whole_numbers_test() {
   let #(interval, tick_recipe) = fig.generate_ticks(fig.interval(0.0, 96.0), 10)
-  let tick_values = fig.tick_values(tick_recipe)
 
   assert interval == fig.interval(0.0, 100.0)
-  assert tick_values
+  assert fig.tick_values(tick_recipe)
     == [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]
 }
 
 pub fn ticks_basic_sub_one_test() {
   let #(interval, tick_recipe) =
     fig.generate_ticks(fig.interval(0.21, 0.95), 10)
-  let tick_values = fig.tick_values(tick_recipe)
 
   assert interval == fig.interval(0.2, 1.0)
-  assert tick_values == [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+  assert fig.tick_values(tick_recipe)
+    == [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 }
 
 pub fn ticks_negative_numbers_test() {
   let #(interval, tick_recipe) = fig.generate_ticks(fig.interval(-3.0, 7.0), 5)
-  let tick_values = fig.tick_values(tick_recipe)
 
   assert interval == fig.interval(-4.0, 8.0)
-  assert tick_values == [-4.0, -2.0, 0.0, 2.0, 4.0, 6.0, 8.0]
+  assert fig.tick_values(tick_recipe) == [-4.0, -2.0, 0.0, 2.0, 4.0, 6.0, 8.0]
 }
 
 pub fn ticks_degenerate_interval_test() {
   let #(interval, tick_recipe) = fig.generate_ticks(fig.interval(1.0, 1.0), 10)
-  let tick_values = fig.tick_values(tick_recipe)
 
   assert interval == fig.interval(1.0, 1.0)
-  assert tick_values == [1.0]
+  assert fig.tick_values(tick_recipe) == [1.0]
+}
+
+pub fn ticks_multiple_passes_test() {
+  let #(interval, tick_recipe) =
+    fig.generate_ticks(fig.interval(-95.0, -89.0), 2)
+
+  assert interval == fig.interval(-100.0, -80.0)
+  assert fig.tick_values(tick_recipe) == [-100.0, -90.0, -80.0]
 }
