@@ -58,6 +58,7 @@ pub fn add_points(point1: Point, point2: Point) {
   Point(list.map2(point1.coordinates, point2.coordinates, float.add))
 }
 
+/// Create an axis geometry.
 pub fn axis(starting_at starting: Point, ending_at ending: Point) {
   Path(commands: [MoveTo(starting), LineTo(ending)], role: Axis)
 }

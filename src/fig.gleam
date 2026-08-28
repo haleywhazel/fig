@@ -13,6 +13,7 @@ import gleam/result
 import gleam/string
 
 import fig/geometry
+import fig/projection
 
 // =============================================================================
 // PUBLIC TYPES
@@ -40,12 +41,15 @@ pub type Channel {
 }
 
 /// A standard chart, use [`new`](#new) instead to avoid having to fill out all
-/// the options. `a` represents the type of the data.
+/// the options. `shape` represents the type of the data.
 pub type Chart(shape) {
   Chart(
     series: List(Series(shape)),
     area: #(Float, Float),
     padding: geometry.Padding,
+    projection: projection.Projection,
+    geometries: List(geometry.Geometry),
+    view: projection.View,
   )
 }
 
@@ -174,11 +178,20 @@ type Value {
 // =============================================================================
 
 /// Add a [`Series`](#Series) (prepends onto `chart.series`).
+///
+/// Note that adding a series resets the existing generated geometries to make
+/// sure that you don't accidentally forget to run [`generate`](#generate)
+/// again after adding a series.
 pub fn add_series(
   to_chart chart: Chart(shape),
   series series: Series(shape),
 ) -> Chart(shape) {
-  Chart(..chart, series: [series, ..chart.series])
+  Chart(
+    ..chart,
+    series: [series, ..chart.series],
+    geometries: [],
+    projection: projection.empty_projection(),
+  )
 }
 
 /// Wrap a string or label or category within a [`Dimension`](#Dimension) type
@@ -246,6 +259,10 @@ pub fn data(points: List(Datum(shape))) -> Data(shape) {
 }
 
 /// Delete all instances of [`Series`](#Series) with `label` of `series_label`.
+///
+/// Note that deleting a series resets the existing generated geometries to make
+/// sure that you don't accidentally forget to run [`generate`](#generate)
+/// again after deleting a series.
 pub fn delete_series(
   from_chart chart: Chart(shape),
   series_label series_label: String,
@@ -255,6 +272,8 @@ pub fn delete_series(
     series: list.filter(chart.series, fn(series) {
       series.label != series_label
     }),
+    geometries: [],
+    projection: projection.empty_projection(),
   )
 }
 
@@ -275,7 +294,7 @@ pub fn extents(data: Data(b)) -> List(Domain) {
   })
 }
 
-pub fn generate(chart: Chart(shape)) -> List(geometry.Geometry) {
+pub fn generate(chart: Chart(shape)) -> Chart(shape) {
   // TODO: some drawing_requirements should be able to be overriden by user
   // this feels a bit redundant right now but it's make more sense when there's
   // more stuff in
@@ -309,128 +328,65 @@ pub fn generate(chart: Chart(shape)) -> List(geometry.Geometry) {
     list.zip(extents, drawing_requirements.channels)
     |> list.filter_map(with: fn(dimension) {
       let #(domain, channel) = dimension
-      case domain, channel {
-        domain, PositionalChannel(_) -> Ok(resolve_axis(domain, channel))
-        _, _ -> Error(Nil)
+      case channel {
+        // only positional channels become axes; colour and size will not
+        PositionalChannel(_) -> Ok(resolve_axis(domain, channel))
       }
     })
 
-  // useful definitions
-  let total_axes = list.length(resolved_axes)
-  let ones = list.repeat(1.0, total_axes)
+  let bounds = list.map(resolved_axes, fn(axis) { domain_bounds(axis.domain) })
+  let minimums = list.map(bounds, fn(bound) { bound.0 })
 
-  // geometry.Geometry representations of each axis
+  // set projection
+  let projection =
+    projection.new(
+      bounds:,
+      area: chart.area,
+      padding: chart.padding,
+      view: chart.view,
+    )
+
   let axes_geometry =
-    resolved_axes
-    |> list.index_map(fn(resolved_axis, index) {
-      let domain = resolved_axis.domain
-      case domain {
-        NumericalDomain(interval) -> {
-          let #(axes_starting, axes_ending) =
-            list.index_map(ones, fn(x, i) {
-              case i == index {
-                True -> #(interval.minimum, interval.maximum)
-                False -> #(0.0, 0.0)
-              }
-            })
-            |> list.unzip()
-
-          geometry.axis(
-            starting_at: geometry.Point(axes_starting),
-            ending_at: geometry.Point(axes_ending),
-          )
-        }
-        CategoricalDomain(_) -> {
-          let #(axes_starting, axes_ending) =
-            list.index_map(ones, fn(x, i) {
-              case i == index {
-                True -> #(
-                  resolved_axis.ticks
-                    |> list.first
-                    // shouldn't ever run
-                    |> result.unwrap(-1.0),
-                  resolved_axis.ticks
-                    |> list.last
-                    // shouldn't ever run
-                    |> result.unwrap(1.0),
-                )
-                False -> #(0.0, 0.0)
-              }
-            })
-            |> list.unzip()
-
-          geometry.axis(
-            starting_at: geometry.Point(axes_starting),
-            ending_at: geometry.Point(axes_ending),
-          )
-        }
+    bounds
+    |> list.index_map(fn(bound, index) {
+      let #(minimum, maximum) = bound
+      let corner = fn(value: Float) {
+        list.index_map(minimums, fn(other, other_index) {
+          case other_index == index {
+            True -> value
+            False -> other
+          }
+        })
       }
+
+      geometry.axis(
+        starting_at: geometry.Point(corner(minimum)),
+        ending_at: geometry.Point(corner(maximum)),
+      )
     })
 
-  // Project function is a function that takes a list and spits out where it
-  // should be on the screen. Gleam doesn't support project having a function
-  // type of a varying number of inputs, so it's a function that spits out
-  // a result instead.
-  //
-  // Note that geometry.Point represents a point within the geometry, so the
-  // input is a geometry.Point and the output is just a list of floats.
-  let projection_fn = case total_axes {
-    2 -> fn(point: geometry.Point) {
-      case point.coordinates {
-        [_, _] -> {
-          // end points for each axis, noting that the projected graph starts from
-          // 0, 0 at top left and +ve direction goes to bottom right
-          let x_axis_starting_point =
-            geometry.Point([
-              chart.padding.left,
-              chart.area.1 -. chart.padding.bottom,
-            ])
-          let x_axis_ending_point =
-            geometry.Point([
-              chart.area.0 -. chart.padding.right,
-              chart.area.1 -. chart.padding.bottom,
-            ])
-          let y_axis_starting_point =
-            geometry.Point([
-              chart.padding.left,
-              chart.area.1 -. chart.padding.bottom,
-            ])
-          let y_axis_ending_point =
-            geometry.Point([chart.padding.left, chart.padding.top])
+  let series_geometry =
+    chart.series
+    |> list.reverse
+    |> list.index_map(fn(series, index) {
+      let commands =
+        series.data.points
+        |> list.map(fn(datum) { coordinates_of(datum, resolved_axes) })
+        |> list.index_map(fn(point, position) {
+          case position {
+            0 -> geometry.MoveTo(geometry.Point(point))
+            _ -> geometry.LineTo(geometry.Point(point))
+          }
+        })
 
-          // list of projection functions for each dimension
-          let projection_functions =
-            list.map2(
-              resolved_axes,
-              [
-                #(x_axis_starting_point, x_axis_ending_point),
-                #(y_axis_starting_point, y_axis_ending_point),
-              ],
-              fn(resolved_axis, end_points) {
-                let #(starting_point, ending_point) = end_points
-                generate_axis_projection(
-                  resolved_axis,
-                  starting_at: starting_point,
-                  ending_at: ending_point,
-                )
-              },
-            )
+      geometry.Path(commands, geometry.Series(index))
+    })
 
-          list.map2(
-            point.coordinates,
-            projection_functions,
-            fn(input, projection_function) { projection_function(input) },
-          )
-          |> list.reduce(fn(x, y) { list.map2(x, y, float.add) })
-        }
-        _ -> Error(Nil)
-      }
-    }
-    // TODO: 3D etc
-    _ -> fn(_) { Error(Nil) }
-  }
-
-  axes_geometry
+  Chart(
+    ..chart,
+    projection: projection,
+    geometries: list.append(axes_geometry, series_geometry),
+  )
 }
 
 /// Updating an interval so that it has nice step values, inspired by the D3
@@ -470,6 +426,9 @@ pub fn new() -> Chart(a) {
     series: [],
     area: #(640.0, 400.0),
     padding: geometry.Padding(20.0, 20.0, 20.0, 20.0),
+    projection: projection.empty_projection(),
+    geometries: [],
+    view: projection.isometric(),
   )
 }
 
@@ -549,61 +508,18 @@ pub fn domain_union(domain_a: Domain, domain_b: Domain) {
   }
 }
 
-// Generate a projection function given a [`ResolvedAxis`](#ResolvedAxis), and
-// some information about the starting and end points.
+/// The bounds of a [`Domain`](#Domain).
+///
+/// Categorical domains have an extra space on each side so that the first and
+/// last categories aren't exactly at the ends.
 @internal
-pub fn generate_axis_projection(
-  resolved_axis resolved_axis: ResolvedAxis,
-  starting_at starting: geometry.Point,
-  ending_at ending: geometry.Point,
-) -> fn(Float) -> List(Float) {
-  case resolved_axis {
-    ResolvedAxis(NumericalDomain(interval), _) -> fn(value: Float) -> List(
-      Float,
-    ) {
-      let range = interval.maximum -. interval.minimum
-
-      let deltas =
-        list.map2(
-          starting.coordinates,
-          ending.coordinates,
-          fn(starting_coordinate, ending_coordinate) {
-            ending_coordinate -. starting_coordinate
-          },
-        )
-
-      list.map2(starting.coordinates, deltas, fn(starting_coordinate, delta) {
-        starting_coordinate
-        +. { delta *. { value -. interval.minimum } /. range }
-      })
-    }
-    ResolvedAxis(_, ticks) -> fn(tick: Float) -> List(Float) {
-      // add an extra tick on either side of the range
-      //
-      // while the very first tick should is 0.0 so instead of subtracting
-      // list.first here we can just ignore it still doing it in case a future
-      // options allows for categorical ticks to be negative through custom
-      // offsets
-      let range =
-        result.unwrap(list.last(ticks), 0.0)
-        -. result.unwrap(list.first(ticks), 0.0)
-        +. 2.0
-
-      let deltas =
-        list.map2(
-          starting.coordinates,
-          ending.coordinates,
-          fn(starting_coordinate, ending_coordinate) {
-            ending_coordinate -. starting_coordinate
-          },
-        )
-
-      // the +. 1.0 just means minus -1.0 which is beneath the first tick
-
-      list.map2(starting.coordinates, deltas, fn(starting_coordinate, delta) {
-        starting_coordinate +. { delta *. { tick +. 1.0 } /. range }
-      })
-    }
+pub fn domain_bounds(domain: Domain) -> #(Float, Float) {
+  case domain {
+    NumericalDomain(interval) -> #(interval.minimum, interval.maximum)
+    CategoricalDomain(categories) -> #(
+      -1.0,
+      int.to_float(list.length(categories)),
+    )
   }
 }
 
@@ -624,6 +540,25 @@ fn category_of(value: Value) -> Result(String, Nil) {
     Category(category) -> Ok(category)
     Number(_) -> Error(Nil)
   }
+}
+
+// datum -> plain numbers in axis order
+fn coordinates_of(
+  datum: Datum(shape),
+  resolved_axes: List(ResolvedAxis),
+) -> List(Float) {
+  list.map2(list.reverse(datum.dimensions), resolved_axes, fn(value, axis) {
+    case value, axis.domain {
+      Number(number), _ -> number
+      Category(category), CategoricalDomain(categories) ->
+        categories
+        |> list.take_while(fn(other) { other != category })
+        |> list.length
+        |> int.to_float
+      // should be unreachable
+      Category(_), _ -> 0.0
+    }
+  })
 }
 
 fn generate_ticks_recursive(

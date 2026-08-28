@@ -187,32 +187,63 @@ pub fn categorical_positional_axis_test() {
 }
 
 // =============================================================================
-// RESOLVE AXIS TESTS
+// DOMAIN BOUNDS TESTS
 // =============================================================================
 
-pub fn generate_linear_axis_projection_test() {
-  let resolved_axis =
-    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(-6.0, 2.0)), [
-      -6.0,
-      -5.0,
-      -4.0,
-      -3.0,
-      -2.0,
-      -1.0,
-      0.0,
-      1.0,
-      2.0,
-    ])
+pub fn numerical_domain_bounds_test() {
+  assert fig.domain_bounds(fig.NumericalDomain(fig.interval(-6.0, 2.0)))
+    == #(-6.0, 2.0)
+}
 
-  let projection =
-    fig.generate_axis_projection(
-      resolved_axis,
-      starting_at: geometry.Point([-8.0, 6.0]),
-      ending_at: geometry.Point([7.0, 2.0]),
-    )
+pub fn categorical_domain_bounds_test() {
+  // inset by one slot on each side so the first and last categories do not
+  // sit exactly on the ends of the axis
+  assert fig.domain_bounds(fig.CategoricalDomain(["a", "b", "c"]))
+    == #(-1.0, 3.0)
+}
 
-  assert projection(-6.0) == [-8.0, 6.0]
-  assert projection(2.0) == [7.0, 2.0]
-  assert projection(0.0) == [3.25, 3.0]
-  assert projection(3.0) == [8.875, 1.5]
+// =============================================================================
+// GENERATE TESTS
+// =============================================================================
+
+pub fn generate_line_chart_test() {
+  let chart =
+    fig.new()
+    |> fig.add_series(fig.Series(
+      "a",
+      fig.line(),
+      fig.numerical([#(0.0, 0.0), #(1.0, 1.0)]),
+    ))
+
+  assert fig.generate(chart).geometries
+    == [
+      // x axis
+      geometry.Path(
+        [
+          geometry.MoveTo(geometry.Point([0.0, 0.0])),
+          geometry.LineTo(geometry.Point([1.0, 0.0])),
+        ],
+        geometry.Axis,
+      ),
+      // y axis
+      geometry.Path(
+        [
+          geometry.MoveTo(geometry.Point([0.0, 0.0])),
+          geometry.LineTo(geometry.Point([0.0, 1.0])),
+        ],
+        geometry.Axis,
+      ),
+      // series
+      geometry.Path(
+        [
+          geometry.MoveTo(geometry.Point([0.0, 0.0])),
+          geometry.LineTo(geometry.Point([1.0, 1.0])),
+        ],
+        geometry.Series(0),
+      ),
+    ]
+}
+
+pub fn generate_empty_chart_test() {
+  assert fig.generate(fig.new()).geometries == []
 }
