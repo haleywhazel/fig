@@ -6,11 +6,9 @@
 
 import gleam/float
 import gleam/int
-import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/string
 
 import fig/geometry
 import fig/projection
@@ -76,6 +74,7 @@ pub type Chart(shape) {
     framed: Bool,
     ticks: Bool,
     grid: Bool,
+    tick_size: Float,
   )
 }
 
@@ -389,18 +388,6 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
       view: chart.view,
     )
 
-  bounds
-  |> string.inspect
-  |> io.println
-
-  resolved_axes
-  |> string.inspect
-  |> io.println
-
-  minimums
-  |> string.inspect
-  |> io.println
-
   let grid_geometry =
     generate_grid_geometry(chart.grid, minimums, bounds, resolved_axes)
 
@@ -492,6 +479,7 @@ pub fn new() -> Chart(a) {
     framed: False,
     ticks: True,
     grid: True,
+    tick_size: 5.0,
   )
 }
 
@@ -541,6 +529,11 @@ pub fn set_axis_display(
   Chart(..chart, axis_display: axis_display)
 }
 
+/// Set the area for the chart as `#(width, height)`
+pub fn set_area(chart: Chart(shape), area: #(Float, Float)) -> Chart(shape) {
+  Chart(..chart, area: area)
+}
+
 /// Sets whether or not to display a full frame around a chart.
 pub fn set_frame(chart: Chart(shape), framed: Bool) -> Chart(shape) {
   Chart(..chart, framed: framed)
@@ -549,6 +542,12 @@ pub fn set_frame(chart: Chart(shape), framed: Bool) -> Chart(shape) {
 /// Sets whether or not to display a grid.
 pub fn set_grid(chart: Chart(shape), grid: Bool) -> Chart(shape) {
   Chart(..chart, grid: grid)
+}
+
+/// Sets the default tick size. This tick size should be in the same units as
+/// the the value provided in [`set_area`](#set_area).
+pub fn set_tick_size(chart: Chart(shape), tick_size: Float) -> Chart(shape) {
+  Chart(..chart, tick_size: tick_size)
 }
 
 /// Sets whether or not to display ticks.
@@ -962,20 +961,4 @@ fn replace_with_index(
       False -> v
     }
   })
-}
-
-pub fn main() -> Nil {
-  let series =
-    Series("new_series", line(), numerical([#(0.0, 2.0), #(0.99, 3.0)]))
-  let series1 =
-    Series("new_series", line(), numerical([#(4.0, -3.0), #(5.0, 1.0)]))
-
-  new()
-  |> add_series(series)
-  |> add_series(series1)
-  |> generate()
-  // |> string.inspect
-  // |> io.println
-
-  Nil
 }

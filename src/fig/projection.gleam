@@ -15,8 +15,8 @@ import fig/geometry
 
 /// The screen direction for a data axis, with `depth` used for painter's
 /// algorithm ordering in 3D and is 0.0 in 2D.
-pub type ScreenDirection {
-  ScreenDirection(x: Float, y: Float, depth: Float)
+pub type ScreenCoordinates {
+  ScreenCoordinates(x: Float, y: Float, depth: Float)
 }
 
 // =============================================================================
@@ -27,12 +27,12 @@ pub type ScreenDirection {
 /// before scaling. You can construct with [`view`](#view) or a preset, e.g.
 /// [`isometric`](#isometric).
 pub opaque type View {
-  View(directions: List(ScreenDirection))
+  View(directions: List(ScreenCoordinates))
 }
 
 /// Projects geometry coordinates onto the screen, construct with [`new`](#new).
 pub opaque type Projection {
-  Projection(origin: ScreenDirection, axes: List(AxisProjection))
+  Projection(origin: ScreenCoordinates, axes: List(AxisProjection))
   EmptyProjection
 }
 
@@ -41,7 +41,7 @@ pub opaque type Projection {
 // =============================================================================
 
 type AxisProjection {
-  AxisProjection(minimum: Float, span: Float, direction: ScreenDirection)
+  AxisProjection(minimum: Float, span: Float, direction: ScreenCoordinates)
 }
 
 // =============================================================================
@@ -49,7 +49,7 @@ type AxisProjection {
 // =============================================================================
 
 /// The directions a [`View`](#View) was built from.
-pub fn directions(view: View) -> List(ScreenDirection) {
+pub fn directions(view: View) -> List(ScreenCoordinates) {
   view.directions
 }
 
@@ -63,17 +63,17 @@ pub fn empty_projection() -> Projection {
 /// symmetrically to the left and right, the third runs straight up.
 pub fn isometric() -> View {
   View([
-    ScreenDirection(
+    ScreenCoordinates(
       -0.707_106_781_186_547_6,
       -0.408_248_290_463_863_1,
       0.577_350_269_189_625_8,
     ),
-    ScreenDirection(
+    ScreenCoordinates(
       0.707_106_781_186_547_6,
       -0.408_248_290_463_863_1,
       0.577_350_269_189_625_8,
     ),
-    ScreenDirection(0.0, -0.816_496_580_927_726, -0.577_350_269_189_625_8),
+    ScreenCoordinates(0.0, -0.816_496_580_927_726, -0.577_350_269_189_625_8),
   ])
 }
 
@@ -88,9 +88,9 @@ pub fn new(
   let height = area.1 -. padding.top -. padding.bottom
 
   let #(origin, directions) = case list.length(bounds) {
-    2 -> #(ScreenDirection(padding.left, area.1 -. padding.bottom, 0.0), [
-      ScreenDirection(width, 0.0, 0.0),
-      ScreenDirection(0.0, 0.0 -. height, 0.0),
+    2 -> #(ScreenCoordinates(padding.left, area.1 -. padding.bottom, 0.0), [
+      ScreenCoordinates(width, 0.0, 0.0),
+      ScreenCoordinates(0.0, 0.0 -. height, 0.0),
     ])
     _ -> fit(view.directions, padding.left, padding.top, width, height)
   }
@@ -107,18 +107,18 @@ pub fn new(
 /// Project a point given in geometry coords.
 pub fn project(
   projection: Projection,
-  coordinates: List(Float),
-) -> ScreenDirection {
+  point: geometry.Point,
+) -> ScreenCoordinates {
   case projection {
-    EmptyProjection -> ScreenDirection(0.0, 0.0, 0.0)
+    EmptyProjection -> ScreenCoordinates(0.0, 0.0, 0.0)
     Projection(origin, axes) ->
-      list.map2(coordinates, axes, fn(value, axis) {
+      list.map2(point.coordinates, axes, fn(value, axis) {
         let along = case axis.span == 0.0 {
           True -> 0.5
           False -> { value -. axis.minimum } /. axis.span
         }
 
-        ScreenDirection(
+        ScreenCoordinates(
           along *. axis.direction.x,
           along *. axis.direction.y,
           along *. axis.direction.depth,
@@ -126,7 +126,7 @@ pub fn project(
       })
       // add origin here
       |> list.fold(origin, fn(total, contribution) {
-        ScreenDirection(
+        ScreenCoordinates(
           total.x +. contribution.x,
           total.y +. contribution.y,
           total.depth +. contribution.depth,
@@ -136,7 +136,7 @@ pub fn project(
 }
 
 /// A view built from your own directions, one per data axis.
-pub fn view(directions: List(ScreenDirection)) -> View {
+pub fn view(directions: List(ScreenCoordinates)) -> View {
   View(directions)
 }
 
@@ -146,24 +146,24 @@ pub fn view(directions: List(ScreenDirection)) -> View {
 
 // fit the projected data geometry inside the chart area, needed for 3D
 fn fit(
-  directions: List(ScreenDirection),
+  directions: List(ScreenCoordinates),
   left: Float,
   top: Float,
   width: Float,
   height: Float,
-) -> #(ScreenDirection, List(ScreenDirection)) {
+) -> #(ScreenCoordinates, List(ScreenCoordinates)) {
   let extent_x = extent(directions, fn(direction) { direction.x })
   let extent_y = extent(directions, fn(direction) { direction.y })
 
   case extent_x == 0.0 || extent_y == 0.0 {
     // degenerate view
-    True -> #(ScreenDirection(left, top, 0.0), directions)
+    True -> #(ScreenCoordinates(left, top, 0.0), directions)
     False -> {
       let scale = float.min(width /. extent_x, height /. extent_y)
 
       let scaled =
         list.map(directions, fn(direction) {
-          ScreenDirection(
+          ScreenCoordinates(
             direction.x *. scale,
             direction.y *. scale,
             direction.depth,
@@ -175,7 +175,7 @@ fn fit(
       let offset_y = lowest(scaled, fn(direction) { direction.y })
 
       #(
-        ScreenDirection(
+        ScreenCoordinates(
           left +. { width -. extent_x *. scale } /. 2.0 -. offset_x,
           top +. { height -. extent_y *. scale } /. 2.0 -. offset_y,
           0.0,
@@ -187,8 +187,8 @@ fn fit(
 }
 
 fn extent(
-  directions: List(ScreenDirection),
-  component: fn(ScreenDirection) -> Float,
+  directions: List(ScreenCoordinates),
+  component: fn(ScreenCoordinates) -> Float,
 ) -> Float {
   list.fold(directions, 0.0, fn(total, direction) {
     total +. float.absolute_value(component(direction))
@@ -196,8 +196,8 @@ fn extent(
 }
 
 fn lowest(
-  directions: List(ScreenDirection),
-  component: fn(ScreenDirection) -> Float,
+  directions: List(ScreenCoordinates),
+  component: fn(ScreenCoordinates) -> Float,
 ) -> Float {
   list.fold(directions, 0.0, fn(total, direction) {
     total +. float.min(0.0, component(direction))

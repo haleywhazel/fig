@@ -5,6 +5,7 @@
 //// generated scenes.
 
 import gleam/float
+import gleam/int
 import gleam/list
 
 // =============================================================================
@@ -18,7 +19,7 @@ import gleam/list
 /// Commands to draw a path
 pub type Command {
   // ArcTo(point: Point, radius: Float)
-  Close
+  // Close
   // CurveTo
   LineTo(point: Point)
   MoveTo(point: Point)
@@ -27,8 +28,8 @@ pub type Command {
 /// A single geometry object representing something to be drawn.
 pub type Geometry {
   Path(commands: List(Command), role: GeometryRole)
-  Rectangle(points: #(Point, Point), role: GeometryRole)
-  Text(at: Point, content: String, role: TextRole)
+  // Rectangle(points: #(Point, Point), role: GeometryRole)
+  // Text(at: Point, content: String, role: TextRole)
   /// Only the direction of `direction` is meaningful, renderers will need to
   /// normalise and scale it themselves for consistency
   Tick(at: Point, direction: Point, role: GeometryRole)
@@ -60,7 +61,6 @@ pub type TextRole {
 // PUBLIC FUNCTIONS
 // =============================================================================
 
-// not used currently
 pub fn add_points(point1: Point, point2: Point) {
   Point(list.map2(point1.coordinates, point2.coordinates, float.add))
 }
@@ -72,4 +72,16 @@ pub fn line(
   with_role role: GeometryRole,
 ) {
   Path(commands: [MoveTo(starting), LineTo(ending)], role: role)
+}
+
+/// The CSS class name for a role. Shared by every renderer that emits DOM
+/// elements, so styling written once works across all of them.
+pub fn role_class(role: GeometryRole) -> String {
+  case role {
+    Axis -> "fig-axis"
+    Display -> "fig-display"
+    Grid -> "fig-grid"
+    Series(index) -> "fig-series fig-series-" <> int.to_string(index)
+    TickMark -> "fig-tick"
+  }
 }
