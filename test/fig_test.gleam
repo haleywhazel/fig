@@ -1,3 +1,5 @@
+import gleam/list
+
 import gleeunit
 
 import fig
@@ -206,7 +208,11 @@ pub fn categorical_domain_bounds_test() {
 // GENERATE TESTS
 // =============================================================================
 
-pub fn generate_line_chart_test() {
+pub fn generate_empty_chart_test() {
+  assert fig.generate(fig.new()).geometries == []
+}
+
+pub fn generate_line_chart_series_test() {
   let chart =
     fig.new()
     |> fig.add_series(fig.Series(
@@ -215,35 +221,179 @@ pub fn generate_line_chart_test() {
       fig.numerical([#(0.0, 0.0), #(1.0, 1.0)]),
     ))
 
-  assert fig.generate(chart).geometries
+  let geometries = fig.generate(chart).geometries
+
+  // the series is drawn last
+  assert list.last(geometries)
+    == Ok(geometry.Path(
+      [
+        geometry.MoveTo(geometry.Point([0.0, 0.0])),
+        geometry.LineTo(geometry.Point([1.0, 1.0])),
+      ],
+      geometry.Series(0),
+    ))
+}
+
+// =============================================================================
+// GEOMETRY GENERATION TESTS
+// =============================================================================
+
+pub fn generate_axes_geometry_test() {
+  assert fig.generate_axes_geometry(fig.AtMinimum, [0.0, 0.0], [
+      #(0.0, 10.0),
+      #(0.0, 100.0),
+    ])
     == [
-      // x axis
-      geometry.Path(
-        [
-          geometry.MoveTo(geometry.Point([0.0, 0.0])),
-          geometry.LineTo(geometry.Point([1.0, 0.0])),
-        ],
-        geometry.Axis,
+      geometry.line(
+        starting_at: geometry.Point([0.0, 0.0]),
+        ending_at: geometry.Point([10.0, 0.0]),
+        with_role: geometry.Axis,
       ),
-      // y axis
-      geometry.Path(
-        [
-          geometry.MoveTo(geometry.Point([0.0, 0.0])),
-          geometry.LineTo(geometry.Point([0.0, 1.0])),
-        ],
-        geometry.Axis,
-      ),
-      // series
-      geometry.Path(
-        [
-          geometry.MoveTo(geometry.Point([0.0, 0.0])),
-          geometry.LineTo(geometry.Point([1.0, 1.0])),
-        ],
-        geometry.Series(0),
+      geometry.line(
+        starting_at: geometry.Point([0.0, 0.0]),
+        ending_at: geometry.Point([0.0, 100.0]),
+        with_role: geometry.Axis,
       ),
     ]
 }
 
-pub fn generate_empty_chart_test() {
-  assert fig.generate(fig.new()).geometries == []
+pub fn generate_axes_geometry_at_value_test() {
+  assert fig.generate_axes_geometry(
+      fig.AtValue(0.0, clamped: True),
+      [2.0, 3.0],
+      [
+        #(0.0, 10.0),
+        #(0.0, 100.0),
+      ],
+    )
+    == [
+      geometry.line(
+        starting_at: geometry.Point([0.0, 3.0]),
+        ending_at: geometry.Point([10.0, 3.0]),
+        with_role: geometry.Axis,
+      ),
+      geometry.line(
+        starting_at: geometry.Point([2.0, 0.0]),
+        ending_at: geometry.Point([2.0, 100.0]),
+        with_role: geometry.Axis,
+      ),
+    ]
+}
+
+pub fn generate_axes_geometry_hidden_test() {
+  assert fig.generate_axes_geometry(fig.Hidden, [0.0, 0.0], [#(0.0, 10.0)])
+    == []
+}
+
+pub fn generate_framed_geometry_test() {
+  assert list.length(
+      fig.generate_framed_geometry(True, [0.0, 0.0], [10.0, 100.0], [
+        #(0.0, 10.0),
+        #(0.0, 100.0),
+      ]),
+    )
+    == 4
+
+  assert fig.generate_framed_geometry(False, [0.0, 0.0], [10.0, 100.0], [
+      #(0.0, 10.0),
+    ])
+    == []
+}
+
+pub fn generate_ticks_geometry_test() {
+  let resolved_axes = [
+    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 1.0)), [
+      0.0, 0.5, 1.0,
+    ]),
+    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 1.0)), [0.0, 1.0]),
+  ]
+
+  assert fig.generate_ticks_geometry(
+      fig.AtMinimum,
+      True,
+      [0.0, 0.0],
+      resolved_axes,
+    )
+    == [
+      geometry.Tick(
+        geometry.Point([0.0, 0.0]),
+        geometry.Point([0.0, -1.0]),
+        geometry.TickMark,
+      ),
+      geometry.Tick(
+        geometry.Point([0.5, 0.0]),
+        geometry.Point([0.0, -1.0]),
+        geometry.TickMark,
+      ),
+      geometry.Tick(
+        geometry.Point([1.0, 0.0]),
+        geometry.Point([0.0, -1.0]),
+        geometry.TickMark,
+      ),
+      geometry.Tick(
+        geometry.Point([0.0, 0.0]),
+        geometry.Point([-1.0, 0.0]),
+        geometry.TickMark,
+      ),
+      geometry.Tick(
+        geometry.Point([0.0, 1.0]),
+        geometry.Point([-1.0, 0.0]),
+        geometry.TickMark,
+      ),
+    ]
+
+  assert fig.generate_ticks_geometry(
+      fig.Hidden,
+      True,
+      [0.0, 0.0],
+      resolved_axes,
+    )
+    == []
+
+  assert fig.generate_ticks_geometry(
+      fig.AtMinimum,
+      False,
+      [0.0, 0.0],
+      resolved_axes,
+    )
+    == []
+}
+
+pub fn generate_grid_geometry_test() {
+  let resolved_axes = [
+    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 10.0)), [0.0, 10.0]),
+    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 100.0)), [50.0]),
+  ]
+
+  assert fig.generate_grid_geometry(
+      True,
+      [0.0, 0.0],
+      [#(0.0, 10.0), #(0.0, 100.0)],
+      resolved_axes,
+    )
+    == [
+      geometry.line(
+        starting_at: geometry.Point([0.0, 50.0]),
+        ending_at: geometry.Point([10.0, 50.0]),
+        with_role: geometry.Grid,
+      ),
+      geometry.line(
+        starting_at: geometry.Point([0.0, 0.0]),
+        ending_at: geometry.Point([0.0, 100.0]),
+        with_role: geometry.Grid,
+      ),
+      geometry.line(
+        starting_at: geometry.Point([10.0, 0.0]),
+        ending_at: geometry.Point([10.0, 100.0]),
+        with_role: geometry.Grid,
+      ),
+    ]
+
+  assert fig.generate_grid_geometry(
+      False,
+      [0.0, 0.0],
+      [#(0.0, 10.0), #(0.0, 100.0)],
+      resolved_axes,
+    )
+    == []
 }

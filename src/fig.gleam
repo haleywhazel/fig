@@ -34,14 +34,36 @@ pub type And(head, tail)
 /// determined by position on the screen would be `Axis(Float, Position`).
 pub type Axis(data_type, channel)
 
+/// Where the axis is drawn. To draw at a specific value, use `AtValue`, e.g.
+/// for Cartesian grids, set `AtValue(0.0, False)`.
+///
+/// This also governs where the ticks are, as ticks are attached to the Axis.
+pub type AxisDisplay {
+  /// Default, draws at the minimums of the range, e.g. bottom and left on a
+  /// standard 2D graph
+  AtMinimum
+  AtMaximum
+  /// `clamped` clamps the value to between minimum and maximum if you don't
+  /// axis and ticks to suddenly disappear.
+  AtValue(Float, clamped: Bool)
+  Hidden
+}
+
 /// The way that a dimension of data is represented within a plot, e.g. through
 /// position or colour.
 pub type Channel {
   PositionalChannel(rough_tick_count: Int)
 }
 
-/// A standard chart, use [`new`](#new) instead to avoid having to fill out all
-/// the options. `shape` represents the type of the data.
+/// A standard chart, use [`new`](#new) instead to construct the entire
+/// structure and modify the defaults you want to change.
+///
+/// Phantom type `shape` represents the type of the data and helps make sure you
+/// don't add series with incongruent types (e.g. [Float, Float] in series 1
+/// but [Float, String] in series 2). While there are occasional cases where
+/// this might be what you want to plot (e.g. two y-axes layered on top of
+/// each other, one for categorical data and one for numerical), these are
+/// mostly cases of bad data visualisation design rather than a genuine need.
 pub type Chart(shape) {
   Chart(
     series: List(Series(shape)),
@@ -50,6 +72,10 @@ pub type Chart(shape) {
     projection: projection.Projection,
     geometries: List(geometry.Geometry),
     view: projection.View,
+    axis_display: AxisDisplay,
+    framed: Bool,
+    ticks: Bool,
+    grid: Bool,
   )
 }
 
@@ -334,8 +360,25 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
       }
     })
 
-  let bounds = list.map(resolved_axes, fn(axis) { domain_bounds(axis.domain) })
+  let bounds =
+    list.map(resolved_axes, fn(resolved_axis) {
+      domain_bounds(resolved_axis.domain)
+    })
   let minimums = list.map(bounds, fn(bound) { bound.0 })
+  let maximums = list.map(bounds, fn(bound) { bound.1 })
+
+  let anchor = case chart.axis_display {
+    AtMinimum | Hidden -> minimums
+    AtMaximum -> maximums
+    AtValue(value, clamped) ->
+      list.map(bounds, fn(bound) {
+        let #(minimum, maximum) = bound
+        case clamped {
+          True -> float.clamp(value, minimum, maximum)
+          False -> value
+        }
+      })
+  }
 
   // set projection
   let projection =
@@ -346,25 +389,35 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
       view: chart.view,
     )
 
-  let axes_geometry =
-    bounds
-    |> list.index_map(fn(bound, index) {
-      let #(minimum, maximum) = bound
-      let corner = fn(value: Float) {
-        list.index_map(minimums, fn(other, other_index) {
-          case other_index == index {
-            True -> value
-            False -> other
-          }
-        })
-      }
+  bounds
+  |> string.inspect
+  |> io.println
 
-      geometry.axis(
-        starting_at: geometry.Point(corner(minimum)),
-        ending_at: geometry.Point(corner(maximum)),
-      )
-    })
+  resolved_axes
+  |> string.inspect
+  |> io.println
 
+  minimums
+  |> string.inspect
+  |> io.println
+
+  let grid_geometry =
+    generate_grid_geometry(chart.grid, minimums, bounds, resolved_axes)
+
+  let frame_geometry =
+    generate_framed_geometry(chart.framed, minimums, maximums, bounds)
+
+  let axes_geometry = generate_axes_geometry(chart.axis_display, anchor, bounds)
+
+  let ticks_geometry =
+    generate_ticks_geometry(
+      chart.axis_display,
+      chart.ticks,
+      anchor,
+      resolved_axes,
+    )
+
+  // TODO: add series options
   let series_geometry =
     chart.series
     |> list.reverse
@@ -385,14 +438,20 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
   Chart(
     ..chart,
     projection: projection,
-    geometries: list.append(axes_geometry, series_geometry),
+    geometries: list.flatten([
+      grid_geometry,
+      frame_geometry,
+      axes_geometry,
+      ticks_geometry,
+      series_geometry,
+    ]),
   )
 }
 
-/// Updating an interval so that it has nice step values, inspired by the D3
-/// nice function. `rough_count` is the rough number of counts you are targeting
-/// for the ticks, rather than a strict number id adheres to to make sure
-/// the resulting output is nice to read.
+/// Updating an interval so that it has nice step values, inspired by (stolen
+/// from) the D3 nice function. `rough_count` is the rough number of counts you
+/// are targeting for the ticks, rather than a strict number id adheres to
+/// make sure the resulting output is nice to read.
 pub fn generate_ticks(
   interval: Interval,
   rough_count: Int,
@@ -429,6 +488,10 @@ pub fn new() -> Chart(a) {
     projection: projection.empty_projection(),
     geometries: [],
     view: projection.isometric(),
+    axis_display: AtMinimum,
+    framed: False,
+    ticks: True,
+    grid: True,
   )
 }
 
@@ -470,6 +533,29 @@ pub fn resolve_axis(
   }
 }
 
+/// Set the axis position using an [`AxisDisplay`](#AxisDisplay).
+pub fn set_axis_display(
+  chart: Chart(shape),
+  axis_display: AxisDisplay,
+) -> Chart(shape) {
+  Chart(..chart, axis_display: axis_display)
+}
+
+/// Sets whether or not to display a full frame around a chart.
+pub fn set_frame(chart: Chart(shape), framed: Bool) -> Chart(shape) {
+  Chart(..chart, framed: framed)
+}
+
+/// Sets whether or not to display a grid.
+pub fn set_grid(chart: Chart(shape), grid: Bool) -> Chart(shape) {
+  Chart(..chart, grid: grid)
+}
+
+/// Sets whether or not to display ticks.
+pub fn set_ticks(chart: Chart(shape), ticks: Bool) -> Chart(shape) {
+  Chart(..chart, ticks: ticks)
+}
+
 /// Retrieve tick values for a numerical line based on a
 /// [`TickRecipe`](#TickRecipe)
 pub fn tick_values(tick_recipe: TickRecipe) -> List(Float) {
@@ -485,8 +571,10 @@ pub fn tick_values(tick_recipe: TickRecipe) -> List(Float) {
 }
 
 // =============================================================================
-// PRIVATE FUNCTIONS
+// PUBLIC INTERNAL FUNCTIONS
 // =============================================================================
+
+// these are public internal mostly for testing purposes
 
 /// Union over two [`Domain`](#Domain).
 @internal
@@ -520,6 +608,173 @@ pub fn domain_bounds(domain: Domain) -> #(Float, Float) {
       -1.0,
       int.to_float(list.length(categories)),
     )
+  }
+}
+
+@internal
+pub fn generate_axes_geometry(
+  axis_display: AxisDisplay,
+  anchor: List(Float),
+  bounds: List(#(Float, Float)),
+) {
+  case axis_display {
+    Hidden -> []
+    _ ->
+      bounds
+      |> list.index_map(fn(bound, index) {
+        let #(minimum, maximum) = bound
+        geometry.line(
+          starting_at: geometry.Point(replace_with_index(
+            anchor,
+            for_index: index,
+            with_value: minimum,
+          )),
+          ending_at: geometry.Point(replace_with_index(
+            anchor,
+            for_index: index,
+            with_value: maximum,
+          )),
+          with_role: geometry.Axis,
+        )
+      })
+  }
+}
+
+@internal
+pub fn generate_framed_geometry(
+  framed: Bool,
+  minimums: List(Float),
+  maximums: List(Float),
+  bounds: List(#(Float, Float)),
+) -> List(geometry.Geometry) {
+  case framed {
+    False -> []
+    True ->
+      bounds
+      |> list.index_map(fn(bound, index) {
+        let #(minimum, maximum) = bound
+        [
+          geometry.line(
+            starting_at: geometry.Point(replace_with_index(
+              minimums,
+              for_index: index,
+              with_value: minimum,
+            )),
+            ending_at: geometry.Point(replace_with_index(
+              minimums,
+              for_index: index,
+              with_value: maximum,
+            )),
+            with_role: geometry.Axis,
+          ),
+
+          geometry.line(
+            starting_at: geometry.Point(replace_with_index(
+              maximums,
+              for_index: index,
+              with_value: minimum,
+            )),
+            ending_at: geometry.Point(replace_with_index(
+              maximums,
+              for_index: index,
+              with_value: maximum,
+            )),
+            with_role: geometry.Axis,
+          ),
+        ]
+      })
+      |> list.flatten
+  }
+}
+
+@internal
+pub fn generate_grid_geometry(
+  grid: Bool,
+  minimums: List(Float),
+  bounds: List(#(Float, Float)),
+  resolved_axes: List(ResolvedAxis),
+) -> List(geometry.Geometry) {
+  case grid {
+    False -> []
+    True ->
+      bounds
+      |> list.index_map(fn(bound, bounds_index) {
+        let #(minimum, maximum) = bound
+
+        resolved_axes
+        |> list.index_map(fn(axis, axis_index) {
+          case bounds_index == axis_index {
+            True -> []
+            False ->
+              axis.ticks
+              |> list.map(fn(tick) {
+                let base_coordinates =
+                  replace_with_index(
+                    minimums,
+                    for_index: axis_index,
+                    with_value: tick,
+                  )
+
+                geometry.line(
+                  starting_at: geometry.Point(replace_with_index(
+                    base_coordinates,
+                    for_index: bounds_index,
+                    with_value: minimum,
+                  )),
+                  ending_at: geometry.Point(replace_with_index(
+                    base_coordinates,
+                    for_index: bounds_index,
+                    with_value: maximum,
+                  )),
+                  with_role: geometry.Grid,
+                )
+              })
+          }
+        })
+        |> list.flatten()
+      })
+      |> list.flatten()
+  }
+}
+
+@internal
+pub fn generate_ticks_geometry(
+  axis_display: AxisDisplay,
+  ticks: Bool,
+  anchor: List(Float),
+  resolved_axes: List(ResolvedAxis),
+) -> List(geometry.Geometry) {
+  let tick_sign = case axis_display {
+    AtMaximum -> 1.0
+    _ -> -1.0
+  }
+
+  case axis_display, ticks {
+    Hidden, _ | _, False -> []
+    _, True ->
+      resolved_axes
+      |> list.index_map(fn(resolved_axis, index) {
+        resolved_axis.ticks
+        |> list.map(fn(tick) {
+          geometry.Tick(
+            at: geometry.Point(replace_with_index(
+              anchor,
+              for_index: index,
+              with_value: tick,
+            )),
+            direction: geometry.Point(
+              list.index_map(anchor, fn(_, other_index) {
+                case other_index == index {
+                  True -> 0.0
+                  False -> tick_sign
+                }
+              }),
+            ),
+            role: geometry.TickMark,
+          )
+        })
+      })
+      |> list.flatten()
   }
 }
 
@@ -696,6 +951,19 @@ fn numerical_domain(values: List(Value)) -> Interval {
   }
 }
 
+fn replace_with_index(
+  list: List(a),
+  for_index index: Int,
+  with_value value: a,
+) -> List(a) {
+  list.index_map(list, fn(v, i) {
+    case i == index {
+      True -> value
+      False -> v
+    }
+  })
+}
+
 pub fn main() -> Nil {
   let series =
     Series("new_series", line(), numerical([#(0.0, 2.0), #(0.99, 3.0)]))
@@ -706,8 +974,8 @@ pub fn main() -> Nil {
   |> add_series(series)
   |> add_series(series1)
   |> generate()
-  |> string.inspect
-  |> io.println
+  // |> string.inspect
+  // |> io.println
 
   Nil
 }

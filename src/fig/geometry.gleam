@@ -15,6 +15,7 @@ import gleam/list
 // PUBLIC TYPES
 // =============================================================================
 
+/// Commands to draw a path
 pub type Command {
   // ArcTo(point: Point, radius: Float)
   Close
@@ -23,13 +24,19 @@ pub type Command {
   MoveTo(point: Point)
 }
 
+/// A single geometry object representing something to be drawn.
 pub type Geometry {
   Path(commands: List(Command), role: GeometryRole)
   Rectangle(points: #(Point, Point), role: GeometryRole)
   Text(at: Point, content: String, role: TextRole)
+  /// Only the direction of `direction` is meaningful, renderers will need to
+  /// normalise and scale it themselves for consistency
+  Tick(at: Point, direction: Point, role: GeometryRole)
 }
 
+/// Role of the [`Geometry`](#Geometry) for styling.
 pub type GeometryRole {
+  /// Frames and axis share the same role `Axis`
   Axis
   Display
   Grid
@@ -58,7 +65,11 @@ pub fn add_points(point1: Point, point2: Point) {
   Point(list.map2(point1.coordinates, point2.coordinates, float.add))
 }
 
-/// Create an axis geometry.
-pub fn axis(starting_at starting: Point, ending_at ending: Point) {
-  Path(commands: [MoveTo(starting), LineTo(ending)], role: Axis)
+/// Create a line.
+pub fn line(
+  starting_at starting: Point,
+  ending_at ending: Point,
+  with_role role: GeometryRole,
+) {
+  Path(commands: [MoveTo(starting), LineTo(ending)], role: role)
 }
