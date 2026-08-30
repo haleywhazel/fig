@@ -1,6 +1,7 @@
 import gleam/string
 
 import fig
+import fig/geometry
 import fig/svg
 
 // =============================================================================
@@ -17,6 +18,7 @@ pub fn to_svg_basic_line_test() {
     fig.new()
     |> fig.set_grid(False)
     |> fig.set_ticks(False)
+    |> fig.set_padding(geometry.Padding(20.0, 20.0, 20.0, 20.0))
     |> fig.add_series(fig.Series(
       "a",
       fig.line(),
@@ -41,6 +43,7 @@ pub fn to_svg_ticks_test() {
     fig.new()
     |> fig.set_grid(False)
     |> fig.set_ticks(True)
+    |> fig.set_padding(geometry.Padding(20.0, 20.0, 20.0, 20.0))
     |> fig.add_series(fig.Series(
       "a",
       fig.line(),
@@ -52,4 +55,30 @@ pub fn to_svg_ticks_test() {
 
   assert string.contains(rendered, "M20.00 380.00 L20.00 385.00")
   assert string.contains(rendered, "M20.00 380.00 L15.00 380.00")
+}
+
+pub fn to_svg_tick_labels_test() {
+  let chart =
+    fig.new()
+    |> fig.set_grid(False)
+    |> fig.set_ticks(True)
+    |> fig.set_padding(geometry.Padding(40.0, 40.0, 40.0, 40.0))
+    |> fig.set_label_offset(10.0)
+    |> fig.add_series(fig.Series(
+      "a",
+      fig.line(),
+      fig.numerical([#(0.0, 0.0), #(1.0, 1.0)]),
+    ))
+    |> fig.generate
+
+  let rendered = svg.to_svg(chart)
+
+  assert string.contains(
+    rendered,
+    "<text x=\"264.00\" y=\"370.00\" text-anchor=\"middle\" dominant-baseline=\"text-top\">0.4</text>",
+  )
+  assert string.contains(
+    rendered,
+    "<text x=\"30.00\" y=\"168.00\" text-anchor=\"end\" dominant-baseline=\"middle\">0.6</text>",
+  )
 }

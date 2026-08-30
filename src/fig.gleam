@@ -13,6 +13,8 @@ import gleam/result
 import fig/geometry
 import fig/projection
 
+import fig/internal/utils
+
 // =============================================================================
 // PUBLIC TYPES
 // =============================================================================
@@ -75,6 +77,7 @@ pub type Chart(shape) {
     ticks: Bool,
     grid: Bool,
     tick_size: Float,
+    label_offset: Float,
   )
 }
 
@@ -404,6 +407,9 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
       resolved_axes,
     )
 
+  let tick_labels =
+    generate_tick_labels(chart.axis_display, chart.ticks, anchor, resolved_axes)
+
   // TODO: add series options
   let series_geometry =
     chart.series
@@ -430,6 +436,7 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
       frame_geometry,
       axes_geometry,
       ticks_geometry,
+      tick_labels,
       series_geometry,
     ]),
   )
@@ -471,7 +478,7 @@ pub fn new() -> Chart(a) {
   Chart(
     series: [],
     area: #(640.0, 400.0),
-    padding: geometry.Padding(20.0, 20.0, 20.0, 20.0),
+    padding: geometry.Padding(40.0, 40.0, 40.0, 40.0),
     projection: projection.empty_projection(),
     geometries: [],
     view: projection.isometric(),
@@ -480,6 +487,7 @@ pub fn new() -> Chart(a) {
     ticks: True,
     grid: True,
     tick_size: 5.0,
+    label_offset: 10.0,
   )
 }
 
@@ -542,6 +550,22 @@ pub fn set_frame(chart: Chart(shape), framed: Bool) -> Chart(shape) {
 /// Sets whether or not to display a grid.
 pub fn set_grid(chart: Chart(shape), grid: Bool) -> Chart(shape) {
   Chart(..chart, grid: grid)
+}
+
+/// Sets whether or not to display a grid.
+pub fn set_label_offset(
+  chart: Chart(shape),
+  label_offset: Float,
+) -> Chart(shape) {
+  Chart(..chart, label_offset: label_offset)
+}
+
+/// Sets the padding.
+pub fn set_padding(
+  chart: Chart(shape),
+  padding: geometry.Padding,
+) -> Chart(shape) {
+  Chart(..chart, padding: padding)
 }
 
 /// Sets the default tick size. This tick size should be in the same units as
@@ -737,6 +761,61 @@ pub fn generate_grid_geometry(
 }
 
 @internal
+pub fn generate_tick_labels(
+  axis_display: AxisDisplay,
+  ticks: Bool,
+  anchor: List(Float),
+  resolved_axes: List(ResolvedAxis),
+) -> List(geometry.Geometry) {
+  let tick_sign = case axis_display {
+    AtMaximum -> 1.0
+    _ -> -1.0
+  }
+
+  case axis_display, ticks {
+    Hidden, _ | _, False -> []
+    _, True ->
+      resolved_axes
+      |> list.index_map(fn(resolved_axis, index) {
+        let tick_step = case resolved_axis.ticks {
+          [] | [_] -> 0.0
+          [x, y] | [x, y, ..] -> y -. x
+        }
+
+        let decimals = case tick_step {
+          _ if tick_step >=. 1.0 -> 0
+          _ -> {
+            float.ceiling(0.0 -. utils.log10(tick_step))
+            |> float.round
+          }
+        }
+
+        resolved_axis.ticks
+        |> list.map(fn(tick) {
+          geometry.Text(
+            at: geometry.Point(replace_with_index(
+              anchor,
+              for_index: index,
+              with_value: tick,
+            )),
+            offset: geometry.Point(
+              list.index_map(anchor, fn(_, other_index) {
+                case other_index == index {
+                  True -> 0.0
+                  False -> tick_sign
+                }
+              }),
+            ),
+            content: utils.round_to_string(tick, decimals),
+            role: geometry.TickLabel,
+          )
+        })
+      })
+      |> list.flatten()
+  }
+}
+
+@internal
 pub fn generate_ticks_geometry(
   axis_display: AxisDisplay,
   ticks: Bool,
@@ -853,25 +932,15 @@ fn generate_ticks_recursive(
 /// Setup the ticks by finding nice values that work with a certain interval and
 /// a rough tick count as a target.
 fn generate_tick_recipe(interval: Interval, rough_count: Int) -> TickRecipe {
-  let ln10 = 2.302_585_092_994_046
   let sqrt50 = 7.071_067_811_865_476
   let sqrt10 = 3.162_277_660_168_379_5
   let sqrt2 = 1.414_213_562_373_095_1
-
-  // base-10 log that unwraps to 1.0
-  let log10 = fn(x: Float) -> Float {
-    {
-      float.logarithm(x)
-      |> result.unwrap(0.0)
-    }
-    /. ln10
-  }
 
   let raw_step =
     { interval.maximum -. interval.minimum }
     /. { float.max(int.to_float(rough_count), 1.0) }
 
-  let order_of_magnitude = float.floor(log10(raw_step))
+  let order_of_magnitude = float.floor(utils.log10(raw_step))
   let magnitude = float.power(10.0, order_of_magnitude) |> result.unwrap(1.0)
   let leading_digit = raw_step /. magnitude
 

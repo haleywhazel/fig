@@ -29,7 +29,7 @@ pub type Command {
 pub type Geometry {
   Path(commands: List(Command), role: GeometryRole)
   // Rectangle(points: #(Point, Point), role: GeometryRole)
-  // Text(at: Point, content: String, role: TextRole)
+  Text(at: Point, offset: Point, content: String, role: TextRole)
   /// Only the direction of `direction` is meaningful, renderers will need to
   /// normalise and scale it themselves for consistency
   Tick(at: Point, direction: Point, role: GeometryRole)
