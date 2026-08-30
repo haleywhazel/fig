@@ -10,7 +10,6 @@ const output_path = "out.svg"
 pub fn main() -> Nil {
   let chart =
     fig.new()
-    |> fig.set_ticks(True)
     |> fig.add_series(fig.Series(
       "1",
       fig.line(),

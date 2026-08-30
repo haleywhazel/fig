@@ -84,15 +84,22 @@ pub fn new(
   padding padding: geometry.Padding,
   view view: View,
 ) -> Projection {
-  let width = area.0 -. padding.left -. padding.right
-  let height = area.1 -. padding.top -. padding.bottom
+  let #(padding_top, padding_right, padding_bottom, padding_left) = case
+    padding
+  {
+    geometry.AutoPadding -> #(0.0, 0.0, 0.0, 0.0)
+    geometry.Padding(top, right, bottom, left) -> #(top, right, bottom, left)
+  }
+
+  let width = area.0 -. padding_left -. padding_right
+  let height = area.1 -. padding_top -. padding_bottom
 
   let #(origin, directions) = case list.length(bounds) {
-    2 -> #(ScreenCoordinates(padding.left, area.1 -. padding.bottom, 0.0), [
+    2 -> #(ScreenCoordinates(padding_left, area.1 -. padding_bottom, 0.0), [
       ScreenCoordinates(width, 0.0, 0.0),
       ScreenCoordinates(0.0, 0.0 -. height, 0.0),
     ])
-    _ -> fit(view.directions, padding.left, padding.top, width, height)
+    _ -> fit(view.directions, padding_left, padding_top, width, height)
   }
 
   Projection(

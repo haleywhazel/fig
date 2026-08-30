@@ -4,6 +4,7 @@ import gleeunit
 
 import fig
 import fig/geometry
+import fig/projection
 
 pub fn main() -> Nil {
   gleeunit.main()
@@ -396,4 +397,107 @@ pub fn generate_grid_geometry_test() {
       resolved_axes,
     )
     == []
+}
+
+// =============================================================================
+// TICK LABEL TESTS
+// =============================================================================
+
+pub fn numerical_tick_label_content_test() {
+  let domain = fig.NumericalDomain(fig.interval(0.0, 1.0))
+
+  assert fig.tick_label_content(domain, 0.25, 2) == "0.25"
+  assert fig.tick_label_content(domain, 3.0, 0) == "3"
+}
+
+pub fn categorical_tick_label_content_test() {
+  let domain = fig.CategoricalDomain(["alpha", "beta", "gamma"])
+
+  assert fig.tick_label_content(domain, 0.0, 0) == "alpha"
+  assert fig.tick_label_content(domain, 2.0, 0) == "gamma"
+}
+
+pub fn generate_tick_labels_categorical_test() {
+  let resolved_axes = [
+    fig.ResolvedAxis(fig.CategoricalDomain(["alpha", "beta"]), [0.0, 1.0]),
+    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 1.0)), [0.0, 1.0]),
+  ]
+
+  assert fig.generate_tick_labels(
+      fig.AtMinimum,
+      True,
+      [0.0, 0.0],
+      resolved_axes,
+    )
+    == [
+      geometry.Text(
+        geometry.Point([0.0, 0.0]),
+        geometry.Point([0.0, -1.0]),
+        "alpha",
+        geometry.TickLabel,
+      ),
+      geometry.Text(
+        geometry.Point([1.0, 0.0]),
+        geometry.Point([0.0, -1.0]),
+        "beta",
+        geometry.TickLabel,
+      ),
+      geometry.Text(
+        geometry.Point([0.0, 0.0]),
+        geometry.Point([-1.0, 0.0]),
+        "0",
+        geometry.TickLabel,
+      ),
+      geometry.Text(
+        geometry.Point([0.0, 1.0]),
+        geometry.Point([-1.0, 0.0]),
+        "1",
+        geometry.TickLabel,
+      ),
+    ]
+}
+
+// =============================================================================
+// GENERATE PROJECTION TESTS
+// =============================================================================
+
+pub fn generate_projection_fixed_padding_test() {
+  let chart =
+    fig.new() |> fig.set_padding(geometry.Padding(20.0, 20.0, 20.0, 20.0))
+
+  let projection =
+    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [])
+
+  assert projection.project(projection, geometry.Point([0.0, 0.0]))
+    == projection.ScreenCoordinates(20.0, 380.0, 0.0)
+}
+
+pub fn generate_projection_auto_padding_test() {
+  let chart = fig.new() |> fig.set_padding(geometry.AutoPadding)
+
+  let projection =
+    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [])
+
+  assert projection.project(projection, geometry.Point([0.0, 0.0]))
+    == projection.ScreenCoordinates(10.0, 390.0, 0.0)
+}
+
+pub fn generate_projection_measures_labels_test() {
+  let chart = fig.new() |> fig.set_padding(geometry.AutoPadding)
+
+  let label =
+    geometry.Text(
+      at: geometry.Point([0.0, 0.0]),
+      offset: geometry.Point([-1.0, 0.0]),
+      content: "1000",
+      role: geometry.TickLabel,
+    )
+
+  let projection =
+    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [label])
+
+  let projection.ScreenCoordinates(x, _, _) =
+    projection.project(projection, geometry.Point([0.0, 0.0]))
+
+  assert x >. 10.0
 }

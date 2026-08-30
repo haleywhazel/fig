@@ -46,6 +46,7 @@ pub type GeometryRole {
 }
 
 pub type Padding {
+  AutoPadding
   Padding(top: Float, right: Float, bottom: Float, left: Float)
 }
 
@@ -74,8 +75,7 @@ pub fn line(
   Path(commands: [MoveTo(starting), LineTo(ending)], role: role)
 }
 
-/// The CSS class name for a role. Shared by every renderer that emits DOM
-/// elements, so styling written once works across all of them.
+/// The CSS class name for a role.
 pub fn role_class(role: GeometryRole) -> String {
   case role {
     Axis -> "fig-axis"

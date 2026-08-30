@@ -7,7 +7,8 @@
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/result
+
+// import gleam/result
 import gleam/string
 
 import fig
@@ -32,6 +33,7 @@ pub opaque type SvgElements {
     depth: Float,
     x: String,
     y: String,
+    size: String,
     text_anchor: String,
     dominant_baseline: String,
     content: String,
@@ -54,8 +56,7 @@ pub fn to_svg(chart: fig.Chart(shape)) -> String {
       height,
       chart.geometries,
       chart.projection,
-      chart.tick_size,
-      chart.label_offset,
+      chart.config,
     )
     |> list.sort(fn(a, b) { float.compare(b.depth, a.depth) })
     |> list.map(to_svg_string)
@@ -81,8 +82,7 @@ pub fn to_svg_elements(
   height: Float,
   geometries: List(geometry.Geometry),
   projection: projection.Projection,
-  tick_size: Float,
-  label_offset: Float,
+  config: fig.ChartConfiguration,
 ) -> List(SvgElements) {
   // d.p. to clamp string representations at
   let decimals =
@@ -143,12 +143,13 @@ pub fn to_svg_elements(
       }
       geometry.Tick(at, direction, role) -> {
         let starting_coordinates = project(at)
+        let direction = project(geometry.add_points(at, direction))
 
         let #(ending_coordinate_x, ending_coordinate_y, _, _) =
-          offset(
-            starting_coordinates,
-            project(geometry.add_points(at, direction)),
-            by: tick_size,
+          utils.offset(
+            #(starting_coordinates.x, starting_coordinates.y),
+            #(direction.x, direction.y),
+            by: config.tick_size,
           )
 
         Path(
@@ -166,11 +167,12 @@ pub fn to_svg_elements(
       }
       geometry.Text(at, direction, content, geometry.TickLabel) -> {
         let starting_coordinates = project(at)
+        let offset = project(geometry.add_points(at, direction))
         let #(x, y, unit_x, unit_y) =
-          offset(
-            starting_coordinates,
-            project(geometry.add_points(at, direction)),
-            by: label_offset,
+          utils.offset(
+            #(starting_coordinates.x, starting_coordinates.y),
+            #(offset.x, offset.y),
+            by: config.tick_label_offset,
           )
 
         let text_anchor = case unit_x {
@@ -179,18 +181,22 @@ pub fn to_svg_elements(
           _ -> "start"
         }
 
-        let dominante_baseline = case unit_y {
-          unit_y if unit_y <. -0.1 -> "text-bottom"
-          unit_y if unit_y <. 0.1 -> "middle"
-          _ -> "text-top"
+        let dominant_baseline = case unit_y {
+          // text-bottom
+          unit_y if unit_y <. -0.1 -> "alphabetic"
+          // middle
+          unit_y if unit_y <. 0.1 -> "central"
+          // text-top
+          _ -> "hanging"
         }
 
         Text(
           depth: starting_coordinates.depth,
           x: round(x),
           y: round(y),
+          size: round(config.tick_label_size),
           text_anchor: text_anchor,
-          dominant_baseline: dominante_baseline,
+          dominant_baseline: dominant_baseline,
           content: content,
           role: geometry.TickLabel,
         )
@@ -213,24 +219,11 @@ fn default_stroke(role: geometry.GeometryRole) -> String {
   }
 }
 
-fn offset(
-  start: projection.ScreenCoordinates,
-  direction: projection.ScreenCoordinates,
-  by offset: Float,
-) {
-  let dx = direction.x -. start.x
-  let dy = direction.y -. start.y
-  let length = float.square_root(dx *. dx +. dy *. dy) |> result.unwrap(0.0)
-
-  let #(unit_x, unit_y) = case length == 0.0 {
-    True -> #(0.0, 0.0)
-    False -> #(dx /. length, dy /. length)
-  }
-
-  let x = start.x +. unit_x *. offset
-  let y = start.y +. unit_y *. offset
-
-  #(x, y, unit_x, unit_y)
+fn escape_text(content: String) -> String {
+  content
+  |> string.replace("&", "&amp;")
+  |> string.replace("<", "&lt;")
+  |> string.replace(">", "&gt;")
 }
 
 fn to_svg_string(element: SvgElements) -> String {
@@ -243,17 +236,19 @@ fn to_svg_string(element: SvgElements) -> String {
       <> "\" fill=\"none\" stroke=\""
       <> default_stroke(role)
       <> "\" stroke-width=\"1\"/>"
-    Text(_depth, x, y, text_anchor, dominant_baseline, content, _role) ->
+    Text(_depth, x, y, size, text_anchor, dominant_baseline, content, _role) ->
       "<text x=\""
       <> x
       <> "\" y=\""
       <> y
+      <> "\" font-size=\""
+      <> size
       <> "\" text-anchor=\""
       <> text_anchor
       <> "\" dominant-baseline=\""
       <> dominant_baseline
       <> "\">"
-      <> content
+      <> escape_text(content)
       <> "</text>"
   }
 }

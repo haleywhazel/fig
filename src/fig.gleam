@@ -9,6 +9,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 
 import fig/geometry
 import fig/projection
@@ -68,16 +69,28 @@ pub type Chart(shape) {
   Chart(
     series: List(Series(shape)),
     area: #(Float, Float),
-    padding: geometry.Padding,
     projection: projection.Projection,
     geometries: List(geometry.Geometry),
     view: projection.View,
+    config: ChartConfiguration,
+  )
+}
+
+/// Chart configurations! Set with the `set_`* functions.
+///
+/// [`new`](#new) already gives a [`Chart`](#Chart) with default options, this
+/// type is not set as `opaque` because downstream modules need to access the
+/// fields.
+pub type ChartConfiguration {
+  ChartConfiguration(
+    padding: geometry.Padding,
     axis_display: AxisDisplay,
     framed: Bool,
     ticks: Bool,
     grid: Bool,
     tick_size: Float,
-    label_offset: Float,
+    tick_label_offset: Float,
+    tick_label_size: Float,
   )
 }
 
@@ -369,7 +382,7 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
   let minimums = list.map(bounds, fn(bound) { bound.0 })
   let maximums = list.map(bounds, fn(bound) { bound.1 })
 
-  let anchor = case chart.axis_display {
+  let anchor = case chart.config.axis_display {
     AtMinimum | Hidden -> minimums
     AtMaximum -> maximums
     AtValue(value, clamped) ->
@@ -382,33 +395,30 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
       })
   }
 
-  // set projection
-  let projection =
-    projection.new(
-      bounds:,
-      area: chart.area,
-      padding: chart.padding,
-      view: chart.view,
-    )
-
   let grid_geometry =
-    generate_grid_geometry(chart.grid, minimums, bounds, resolved_axes)
+    generate_grid_geometry(chart.config.grid, minimums, bounds, resolved_axes)
 
   let frame_geometry =
-    generate_framed_geometry(chart.framed, minimums, maximums, bounds)
+    generate_framed_geometry(chart.config.framed, minimums, maximums, bounds)
 
-  let axes_geometry = generate_axes_geometry(chart.axis_display, anchor, bounds)
+  let axes_geometry =
+    generate_axes_geometry(chart.config.axis_display, anchor, bounds)
 
   let ticks_geometry =
     generate_ticks_geometry(
-      chart.axis_display,
-      chart.ticks,
+      chart.config.axis_display,
+      chart.config.ticks,
       anchor,
       resolved_axes,
     )
 
   let tick_labels =
-    generate_tick_labels(chart.axis_display, chart.ticks, anchor, resolved_axes)
+    generate_tick_labels(
+      chart.config.axis_display,
+      chart.config.ticks,
+      anchor,
+      resolved_axes,
+    )
 
   // TODO: add series options
   let series_geometry =
@@ -427,6 +437,10 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
 
       geometry.Path(commands, geometry.Series(index))
     })
+
+  // set projection
+  let projection =
+    generate_projection(chart, bounds, ticks_geometry, tick_labels)
 
   Chart(
     ..chart,
@@ -478,16 +492,19 @@ pub fn new() -> Chart(a) {
   Chart(
     series: [],
     area: #(640.0, 400.0),
-    padding: geometry.Padding(40.0, 40.0, 40.0, 40.0),
     projection: projection.empty_projection(),
     geometries: [],
     view: projection.isometric(),
-    axis_display: AtMinimum,
-    framed: False,
-    ticks: True,
-    grid: True,
-    tick_size: 5.0,
-    label_offset: 10.0,
+    config: ChartConfiguration(
+      padding: geometry.AutoPadding,
+      axis_display: AtMinimum,
+      framed: False,
+      ticks: True,
+      grid: True,
+      tick_size: 5.0,
+      tick_label_offset: 10.0,
+      tick_label_size: 12.0,
+    ),
   )
 }
 
@@ -510,7 +527,25 @@ pub fn numerical(
   )
 }
 
-/// Resolve a single domain into an axis based on the channel
+/// Get tick label content based on domain, the actual, tick, and d.p. to round
+/// to
+@internal
+pub fn tick_label_content(
+  domain: Domain,
+  tick: Float,
+  decimals: Int,
+) -> String {
+  case domain {
+    NumericalDomain(_) -> utils.round_to_string(tick, decimals)
+    CategoricalDomain(categories) ->
+      categories
+      |> list.drop(float.round(tick))
+      |> list.first
+      // shouldn't be reachable
+      |> result.unwrap("")
+  }
+}
+
 pub fn resolve_axis(
   domain domain: Domain,
   with_channel channel: Channel,
@@ -534,7 +569,10 @@ pub fn set_axis_display(
   chart: Chart(shape),
   axis_display: AxisDisplay,
 ) -> Chart(shape) {
-  Chart(..chart, axis_display: axis_display)
+  Chart(
+    ..chart,
+    config: ChartConfiguration(..chart.config, axis_display: axis_display),
+  )
 }
 
 /// Set the area for the chart as `#(width, height)`
@@ -544,20 +582,12 @@ pub fn set_area(chart: Chart(shape), area: #(Float, Float)) -> Chart(shape) {
 
 /// Sets whether or not to display a full frame around a chart.
 pub fn set_frame(chart: Chart(shape), framed: Bool) -> Chart(shape) {
-  Chart(..chart, framed: framed)
+  Chart(..chart, config: ChartConfiguration(..chart.config, framed: framed))
 }
 
 /// Sets whether or not to display a grid.
 pub fn set_grid(chart: Chart(shape), grid: Bool) -> Chart(shape) {
-  Chart(..chart, grid: grid)
-}
-
-/// Sets whether or not to display a grid.
-pub fn set_label_offset(
-  chart: Chart(shape),
-  label_offset: Float,
-) -> Chart(shape) {
-  Chart(..chart, label_offset: label_offset)
+  Chart(..chart, config: ChartConfiguration(..chart.config, grid: grid))
 }
 
 /// Sets the padding.
@@ -565,18 +595,46 @@ pub fn set_padding(
   chart: Chart(shape),
   padding: geometry.Padding,
 ) -> Chart(shape) {
-  Chart(..chart, padding: padding)
+  Chart(..chart, config: ChartConfiguration(..chart.config, padding: padding))
+}
+
+/// Sets the offset of tick labels from the axis.
+pub fn set_tick_label_offset(
+  chart: Chart(shape),
+  tick_label_offset: Float,
+) -> Chart(shape) {
+  Chart(
+    ..chart,
+    config: ChartConfiguration(
+      ..chart.config,
+      tick_label_offset: tick_label_offset,
+    ),
+  )
+}
+
+/// Sets the offset of tick labels from the axis.
+pub fn set_tick_label_size(
+  chart: Chart(shape),
+  tick_label_size: Float,
+) -> Chart(shape) {
+  Chart(
+    ..chart,
+    config: ChartConfiguration(..chart.config, tick_label_size: tick_label_size),
+  )
 }
 
 /// Sets the default tick size. This tick size should be in the same units as
 /// the the value provided in [`set_area`](#set_area).
 pub fn set_tick_size(chart: Chart(shape), tick_size: Float) -> Chart(shape) {
-  Chart(..chart, tick_size: tick_size)
+  Chart(
+    ..chart,
+    config: ChartConfiguration(..chart.config, tick_size: tick_size),
+  )
 }
 
 /// Sets whether or not to display ticks.
 pub fn set_ticks(chart: Chart(shape), ticks: Bool) -> Chart(shape) {
-  Chart(..chart, ticks: ticks)
+  Chart(..chart, config: ChartConfiguration(..chart.config, ticks: ticks))
 }
 
 /// Retrieve tick values for a numerical line based on a
@@ -761,6 +819,128 @@ pub fn generate_grid_geometry(
 }
 
 @internal
+pub fn generate_projection(
+  chart: Chart(shape),
+  bounds: List(#(Float, Float)),
+  ticks_geometry: List(geometry.Geometry),
+  tick_labels: List(geometry.Geometry),
+) {
+  case chart.config.padding {
+    // first estimate how much we go out of bounds for for zero padding if it's
+    // auto padding, then adjust the padding based on that
+    geometry.AutoPadding -> {
+      let projection =
+        projection.new(
+          bounds: bounds,
+          area: chart.area,
+          padding: chart.config.padding,
+          view: chart.view,
+        )
+
+      let #(min_x, min_y, max_x, max_y) =
+        list.flatten([ticks_geometry, tick_labels])
+        |> list.map(fn(geometry) {
+          case geometry {
+            geometry.Tick(at, direction, _) -> {
+              let projection.ScreenCoordinates(starting_x, starting_y, _) =
+                projection.project(projection, at)
+              let projection.ScreenCoordinates(direction_x, direction_y, _) =
+                projection.project(
+                  projection,
+                  geometry.add_points(at, direction),
+                )
+
+              let #(ending_x, ending_y, _, _) =
+                utils.offset(
+                  #(starting_x, starting_y),
+                  #(direction_x, direction_y),
+                  by: chart.config.tick_size,
+                )
+
+              #(
+                float.min(starting_x, ending_x),
+                float.min(starting_y, ending_y),
+                float.max(starting_x, ending_x),
+                float.max(starting_y, ending_y),
+              )
+            }
+            geometry.Text(at, offset, content, geometry.TickLabel) -> {
+              let projection.ScreenCoordinates(starting_x, starting_y, _) =
+                projection.project(projection, at)
+              let projection.ScreenCoordinates(direction_x, direction_y, _) =
+                projection.project(projection, geometry.add_points(at, offset))
+
+              let #(x, y, unit_x, unit_y) =
+                utils.offset(
+                  #(starting_x, starting_y),
+                  #(direction_x, direction_y),
+                  by: chart.config.tick_size,
+                )
+
+              let width =
+                0.6
+                *. chart.config.tick_label_size
+                *. { string.length(content) |> int.to_float }
+              let height = chart.config.tick_label_size
+
+              // text-anchor
+              let x_fraction = case unit_x {
+                unit_x if unit_x <. -0.1 -> 1.0
+                unit_x if unit_x <. 0.1 -> 0.5
+                _ -> 0.0
+              }
+
+              // dominant-baseline
+              let y_fraction = case unit_y {
+                unit_y if unit_y <. -0.1 -> 1.0
+                unit_y if unit_y <. 0.1 -> 0.5
+                _ -> 0.0
+              }
+
+              let minimum_x = x -. width *. x_fraction
+              let minimum_y = y -. height *. y_fraction
+
+              #(minimum_x, minimum_y, minimum_x +. width, minimum_y +. height)
+            }
+            // shouldn't run
+            _ -> {
+              #(0.0, 0.0, 0.0, 0.0)
+            }
+          }
+        })
+        |> list.fold(#(0.0, 0.0, chart.area.0, chart.area.1), fn(acc, bound) {
+          #(
+            float.min(acc.0, bound.0),
+            float.min(acc.1, bound.1),
+            float.max(acc.2, bound.2),
+            float.max(acc.3, bound.3),
+          )
+        })
+
+      projection.new(
+        bounds:,
+        area: chart.area,
+        padding: geometry.Padding(
+          10.0 -. float.min(0.0, min_y),
+          10.0 +. float.max(0.0, max_x -. chart.area.0),
+          10.0 +. float.max(0.0, max_y -. chart.area.1),
+          10.0 -. float.min(0.0, min_x),
+        ),
+        view: chart.view,
+      )
+    }
+    // strict padding
+    padding ->
+      projection.new(
+        bounds:,
+        area: chart.area,
+        padding: padding,
+        view: chart.view,
+      )
+  }
+}
+
+@internal
 pub fn generate_tick_labels(
   axis_display: AxisDisplay,
   ticks: Bool,
@@ -806,7 +986,7 @@ pub fn generate_tick_labels(
                 }
               }),
             ),
-            content: utils.round_to_string(tick, decimals),
+            content: tick_label_content(resolved_axis.domain, tick, decimals),
             role: geometry.TickLabel,
           )
         })
