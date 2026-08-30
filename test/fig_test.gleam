@@ -501,3 +501,27 @@ pub fn generate_projection_measures_labels_test() {
 
   assert x >. 10.0
 }
+
+pub fn generate_projection_caps_padding_test() {
+  let chart =
+    fig.new()
+    |> fig.set_area(#(100.0, 100.0))
+    |> fig.set_padding(geometry.AutoPadding)
+
+  // a very very very very very long label
+  let label =
+    geometry.Text(
+      at: geometry.Point([0.0, 0.0]),
+      offset: geometry.Point([-1.0, 0.0]),
+      content: "a very very very very very long label",
+      role: geometry.TickLabel,
+    )
+
+  let projection =
+    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [label])
+
+  let projection.ScreenCoordinates(x, _, _) =
+    projection.project(projection, geometry.Point([0.0, 0.0]))
+
+  assert x <=. 40.0
+}

@@ -66,6 +66,8 @@ pub fn to_svg(chart: fig.Chart(shape)) -> String {
   <> utils.round_to_string(width, 0)
   <> " "
   <> utils.round_to_string(height, 0)
+  <> "\" font-family=\""
+  <> chart.config.font_family
   <> "\" xmlns=\"http://www.w3.org/2000/svg\">"
   <> body
   <> "</svg>"

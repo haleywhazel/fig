@@ -91,8 +91,14 @@ pub fn new(
     geometry.Padding(top, right, bottom, left) -> #(top, right, bottom, left)
   }
 
-  let width = area.0 -. padding_left -. padding_right
-  let height = area.1 -. padding_top -. padding_bottom
+  // padding exceeding the chart area cannot invert axes
+  let minimum_extent = 1.0
+
+  // padding larger than the area would give a negative extent, which flips
+  // the axis direction and renders the chart inside out
+  let width = float.max(area.0 -. padding_left -. padding_right, minimum_extent)
+  let height =
+    float.max(area.1 -. padding_top -. padding_bottom, minimum_extent)
 
   let #(origin, directions) = case list.length(bounds) {
     2 -> #(ScreenCoordinates(padding_left, area.1 -. padding_bottom, 0.0), [

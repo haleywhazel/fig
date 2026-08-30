@@ -9,7 +9,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/string
 
 import fig/geometry
 import fig/projection
@@ -91,6 +90,7 @@ pub type ChartConfiguration {
     tick_size: Float,
     tick_label_offset: Float,
     tick_label_size: Float,
+    font_family: String,
   )
 }
 
@@ -488,6 +488,10 @@ pub fn line() -> Drawing(
 }
 
 /// Create a new chart with default settings.
+///
+/// By default, padding is automated, and this might not
+/// work with certain fonts. To fix this, set custom
+/// padding to make the chart work.
 pub fn new() -> Chart(a) {
   Chart(
     series: [],
@@ -504,6 +508,7 @@ pub fn new() -> Chart(a) {
       tick_size: 5.0,
       tick_label_offset: 10.0,
       tick_label_size: 12.0,
+      font_family: "sans-serif",
     ),
   )
 }
@@ -580,6 +585,17 @@ pub fn set_area(chart: Chart(shape), area: #(Float, Float)) -> Chart(shape) {
   Chart(..chart, area: area)
 }
 
+/// Set global font family
+pub fn set_font_family(
+  chart: Chart(shape),
+  font_family: String,
+) -> Chart(shape) {
+  Chart(
+    ..chart,
+    config: ChartConfiguration(..chart.config, font_family: font_family),
+  )
+}
+
 /// Sets whether or not to display a full frame around a chart.
 pub fn set_frame(chart: Chart(shape), framed: Bool) -> Chart(shape) {
   Chart(..chart, config: ChartConfiguration(..chart.config, framed: framed))
@@ -590,7 +606,7 @@ pub fn set_grid(chart: Chart(shape), grid: Bool) -> Chart(shape) {
   Chart(..chart, config: ChartConfiguration(..chart.config, grid: grid))
 }
 
-/// Sets the padding.
+/// Sets the padding to fixed values.
 pub fn set_padding(
   chart: Chart(shape),
   padding: geometry.Padding,
@@ -612,7 +628,7 @@ pub fn set_tick_label_offset(
   )
 }
 
-/// Sets the offset of tick labels from the axis.
+/// Sets the size of tick labels.
 pub fn set_tick_label_size(
   chart: Chart(shape),
   tick_label_size: Float,
@@ -878,9 +894,7 @@ pub fn generate_projection(
                 )
 
               let width =
-                0.6
-                *. chart.config.tick_label_size
-                *. { string.length(content) |> int.to_float }
+                utils.text_width(content, chart.config.tick_label_size)
               let height = chart.config.tick_label_size
 
               // text-anchor
@@ -921,10 +935,16 @@ pub fn generate_projection(
         bounds:,
         area: chart.area,
         padding: geometry.Padding(
-          10.0 -. float.min(0.0, min_y),
-          10.0 +. float.max(0.0, max_x -. chart.area.0),
-          10.0 +. float.max(0.0, max_y -. chart.area.1),
-          10.0 -. float.min(0.0, min_x),
+          cap_padding(10.0 -. float.min(0.0, min_y), chart.area.1),
+          cap_padding(
+            10.0 +. float.max(0.0, max_x -. chart.area.0),
+            chart.area.0,
+          ),
+          cap_padding(
+            10.0 +. float.max(0.0, max_y -. chart.area.1),
+            chart.area.1,
+          ),
+          cap_padding(10.0 -. float.min(0.0, min_x), chart.area.0),
         ),
         view: chart.view,
       )
@@ -1039,6 +1059,12 @@ pub fn generate_ticks_geometry(
 // =============================================================================
 // PRIVATE FUNCTIONS
 // =============================================================================
+
+fn cap_padding(padding: Float, extent: Float) -> Float {
+  // cap padding at 0.4 percent of the width; stuff that don't fit gets clipped
+  // off
+  float.min(padding, extent *. 0.4)
+}
 
 fn categorical_domain(values: List(Value)) -> List(String) {
   // filter_map is here but type checking means that it should be impossible to

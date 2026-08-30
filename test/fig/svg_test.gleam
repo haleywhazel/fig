@@ -11,7 +11,7 @@ import fig/svg
 
 pub fn to_svg_empty_chart_test() {
   assert svg.to_svg(fig.new())
-    == "<svg viewBox=\"0 0 640 400\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+    == "<svg viewBox=\"0 0 640 400\" font-family=\"sans-serif\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
 }
 
 pub fn to_svg_view_box_test() {

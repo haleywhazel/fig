@@ -2,8 +2,13 @@
 
 import gleam/float
 import gleam/int
+import gleam/list
 import gleam/result
 import gleam/string
+
+// =============================================================================
+// PUBLIC INTERNAL FUNCTIONS
+// =============================================================================
 
 @internal
 pub fn log10(x: Float) -> Float {
@@ -60,4 +65,53 @@ pub fn round_to_string(value: Float, decimals: Int) -> String {
         "0",
       )
   }
+}
+
+/// text width estimation
+@internal
+pub fn text_width(content: String, font_size: Float) -> Float {
+  content
+  |> string.to_utf_codepoints
+  |> list.fold(0.0, fn(total, codepoint) {
+    total +. character_width(string.utf_codepoint_to_int(codepoint))
+  })
+  // safety factor
+  |> float.multiply(font_size *. 1.1)
+}
+
+// =============================================================================
+// PRIVATE FUNCTIONS
+// =============================================================================
+
+fn character_width(codepoint: Int) -> Float {
+  case codepoint {
+    // digits
+    codepoint if codepoint >= 48 && codepoint <= 57 -> 0.556
+    // space, full stop, comma
+    32 | 44 | 46 -> 0.278
+    // hyphen
+    45 -> 0.333
+    // percent
+    37 -> 0.889
+    // lowercase, averaged
+    codepoint if codepoint >= 97 && codepoint <= 122 -> 0.5
+    // uppercase, averaged
+    codepoint if codepoint >= 65 && codepoint <= 90 -> 0.667
+    codepoint ->
+      case is_full_width(codepoint) {
+        True -> 1.0
+        // anything else, assume roughly a digit
+        False -> 0.6
+      }
+  }
+}
+
+fn is_full_width(codepoint: Int) -> Bool {
+  { codepoint >= 0x1100 && codepoint <= 0x115F }
+  || { codepoint >= 0x2E80 && codepoint <= 0xA4CF }
+  || { codepoint >= 0xAC00 && codepoint <= 0xD7A3 }
+  || { codepoint >= 0xF900 && codepoint <= 0xFAFF }
+  || { codepoint >= 0xFE30 && codepoint <= 0xFE6F }
+  || { codepoint >= 0xFF00 && codepoint <= 0xFF60 }
+  || { codepoint >= 0xFFE0 && codepoint <= 0xFFE6 }
 }
