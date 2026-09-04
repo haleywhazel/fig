@@ -167,14 +167,16 @@ pub fn to_svg_elements(
           role: role,
         )
       }
-      geometry.Text(at, direction, content, geometry.TickLabel) -> {
+      // every text role places the same way now that the distance travels with
+      // the geometry; only the font size is still looked up per role
+      geometry.Text(at, offset, content, role) -> {
         let starting_coordinates = project(at)
-        let offset = project(geometry.add_points(at, direction))
+        let offset_end = project(geometry.add_points(at, offset.direction))
         let #(x, y, unit_x, unit_y) =
           utils.offset(
             #(starting_coordinates.x, starting_coordinates.y),
-            #(offset.x, offset.y),
-            by: config.tick_label_offset,
+            #(offset_end.x, offset_end.y),
+            by: offset.distance,
           )
 
         let text_anchor = case unit_x {
@@ -192,51 +194,20 @@ pub fn to_svg_elements(
           _ -> "hanging"
         }
 
-        Text(
-          depth: starting_coordinates.depth,
-          x: round(x),
-          y: round(y),
-          size: round(config.tick_label_size),
-          text_anchor: text_anchor,
-          dominant_baseline: dominant_baseline,
-          content: content,
-          role: geometry.TickLabel,
-        )
-      }
-      geometry.Text(at, direction, content, geometry.AxisLabel) -> {
-        let starting_coordinates = project(at)
-        let offset = project(geometry.add_points(at, direction))
-        let #(x, y, unit_x, unit_y) =
-          utils.offset(
-            #(starting_coordinates.x, starting_coordinates.y),
-            #(offset.x, offset.y),
-            by: config.axis_label_offset,
-          )
-
-        let text_anchor = case unit_x {
-          unit_x if unit_x <. -0.1 -> "end"
-          unit_x if unit_x <. 0.1 -> "middle"
-          _ -> "start"
-        }
-
-        let dominant_baseline = case unit_y {
-          // text-bottom
-          unit_y if unit_y <. -0.1 -> "alphabetic"
-          // middle
-          unit_y if unit_y <. 0.1 -> "central"
-          // text-top
-          _ -> "hanging"
+        let size = case role {
+          geometry.AxisLabel -> config.axis_label_size
+          geometry.TickLabel -> config.tick_label_size
         }
 
         Text(
           depth: starting_coordinates.depth,
           x: round(x),
           y: round(y),
-          size: round(config.axis_label_size),
+          size: round(size),
           text_anchor: text_anchor,
           dominant_baseline: dominant_baseline,
           content: content,
-          role: geometry.AxisLabel,
+          role: role,
         )
       }
     }

@@ -29,7 +29,7 @@ pub type Command {
 pub type Geometry {
   Path(commands: List(Command), role: GeometryRole)
   // Rectangle(points: #(Point, Point), role: GeometryRole)
-  Text(at: Point, offset: Point, content: String, role: TextRole)
+  Text(at: Point, offset: Offset, content: String, role: TextRole)
   /// Only the direction of `direction` is meaningful, renderers will need to
   /// normalise and scale it themselves for consistency
   Tick(at: Point, direction: Point, role: GeometryRole)
@@ -43,6 +43,15 @@ pub type GeometryRole {
   Grid
   Series(index: Int)
   TickMark
+}
+
+/// How far a piece of geometry sits away from the point it is anchored to.
+///
+/// `direction` is in data coords and projected like other points whereas
+/// `distance` is for the renderer (screen length). This is mostly to allow for
+/// more consistent offsetting.
+pub type Offset {
+  Offset(direction: Point, distance: Float)
 }
 
 pub type Padding {

@@ -428,31 +428,32 @@ pub fn generate_tick_labels_categorical_test() {
   assert fig.generate_tick_labels(
       fig.AtMinimum,
       True,
+      10.0,
       [0.0, 0.0],
       resolved_axes,
     )
     == [
       geometry.Text(
         geometry.Point([0.0, 0.0]),
-        geometry.Point([0.0, -1.0]),
+        geometry.Offset(geometry.Point([0.0, -1.0]), 10.0),
         "alpha",
         geometry.TickLabel,
       ),
       geometry.Text(
         geometry.Point([1.0, 0.0]),
-        geometry.Point([0.0, -1.0]),
+        geometry.Offset(geometry.Point([0.0, -1.0]), 10.0),
         "beta",
         geometry.TickLabel,
       ),
       geometry.Text(
         geometry.Point([0.0, 0.0]),
-        geometry.Point([-1.0, 0.0]),
+        geometry.Offset(geometry.Point([-1.0, 0.0]), 10.0),
         "0",
         geometry.TickLabel,
       ),
       geometry.Text(
         geometry.Point([0.0, 1.0]),
-        geometry.Point([-1.0, 0.0]),
+        geometry.Offset(geometry.Point([-1.0, 0.0]), 10.0),
         "1",
         geometry.TickLabel,
       ),
@@ -490,7 +491,7 @@ pub fn generate_projection_measures_labels_test() {
   let label =
     geometry.Text(
       at: geometry.Point([0.0, 0.0]),
-      offset: geometry.Point([-1.0, 0.0]),
+      offset: geometry.Offset(geometry.Point([-1.0, 0.0]), 10.0),
       content: "1000",
       role: geometry.TickLabel,
     )
@@ -514,7 +515,7 @@ pub fn generate_projection_caps_padding_test() {
   let label =
     geometry.Text(
       at: geometry.Point([0.0, 0.0]),
-      offset: geometry.Point([-1.0, 0.0]),
+      offset: geometry.Offset(geometry.Point([-1.0, 0.0]), 10.0),
       content: "a very very very very very long label",
       role: geometry.TickLabel,
     )
@@ -526,4 +527,173 @@ pub fn generate_projection_caps_padding_test() {
     projection.project(projection, geometry.Point([0.0, 0.0]))
 
   assert x <=. 40.0
+}
+
+// =============================================================================
+// AXIS LABEL TESTS
+// =============================================================================
+
+pub fn generate_axes_labels_test() {
+  let chart = fig.new() |> fig.set_axis_label_offset([10.0, 20.0])
+  let resolved_axes = [
+    fig.ResolvedAxis(0, fig.NumericalDomain(fig.interval(0.0, 10.0)), [
+      0.0,
+      10.0,
+    ]),
+    fig.ResolvedAxis(1, fig.NumericalDomain(fig.interval(0.0, 100.0)), [
+      0.0,
+      100.0,
+    ]),
+  ]
+
+  assert fig.generate_axes_labels(
+      fig.AtMinimum,
+      chart.config.axis_label_offset,
+      10.0,
+      12.0,
+      ["x", "y"],
+      [0.0, 0.0],
+      resolved_axes,
+    )
+    == [
+      geometry.Text(
+        geometry.Point([5.0, 0.0]),
+        geometry.Offset(geometry.Point([0.0, -1.0]), 10.0),
+        "x",
+        geometry.AxisLabel,
+      ),
+      geometry.Text(
+        geometry.Point([0.0, 50.0]),
+        geometry.Offset(geometry.Point([-1.0, 0.0]), 20.0),
+        "y",
+        geometry.AxisLabel,
+      ),
+    ]
+}
+
+pub fn generate_axes_labels_at_maximum_test() {
+  let chart = fig.new() |> fig.set_axis_label_offset([10.0, 20.0])
+  let resolved_axes = [
+    fig.ResolvedAxis(0, fig.NumericalDomain(fig.interval(0.0, 10.0)), [
+      0.0,
+      10.0,
+    ]),
+    fig.ResolvedAxis(1, fig.NumericalDomain(fig.interval(0.0, 100.0)), [
+      0.0,
+      100.0,
+    ]),
+  ]
+
+  assert fig.generate_axes_labels(
+      fig.AtMaximum,
+      chart.config.axis_label_offset,
+      10.0,
+      12.0,
+      ["x", "y"],
+      [0.0, 0.0],
+      resolved_axes,
+    )
+    == [
+      geometry.Text(
+        geometry.Point([5.0, 0.0]),
+        geometry.Offset(geometry.Point([0.0, 1.0]), 10.0),
+        "x",
+        geometry.AxisLabel,
+      ),
+      geometry.Text(
+        geometry.Point([0.0, 50.0]),
+        geometry.Offset(geometry.Point([1.0, 0.0]), 20.0),
+        "y",
+        geometry.AxisLabel,
+      ),
+    ]
+}
+
+pub fn generate_axes_labels_reconciles_length_test() {
+  let chart = fig.new() |> fig.set_axis_label_offset([10.0, 20.0])
+  let offsets = chart.config.axis_label_offset
+  let resolved_axes = [
+    fig.ResolvedAxis(0, fig.NumericalDomain(fig.interval(0.0, 10.0)), [
+      0.0,
+      10.0,
+    ]),
+    fig.ResolvedAxis(1, fig.NumericalDomain(fig.interval(0.0, 100.0)), [
+      0.0,
+      100.0,
+    ]),
+  ]
+
+  let labels = fn(dimension_labels) {
+    fig.generate_axes_labels(
+      fig.AtMinimum,
+      offsets,
+      10.0,
+      12.0,
+      dimension_labels,
+      [0.0, 0.0],
+      resolved_axes,
+    )
+  }
+
+  assert list.length(labels(["x", "y"])) == 2
+  assert list.length(labels(["x"])) == 1
+  assert list.length(labels(["", "y"])) == 1
+  assert list.length(labels(["x", "y", "z"])) == 2
+  assert labels([]) == []
+}
+
+pub fn generate_axes_labels_uses_dimension_test() {
+  let chart = fig.new() |> fig.set_axis_label_offset([10.0, 20.0])
+  let resolved_axes = [
+    fig.ResolvedAxis(0, fig.NumericalDomain(fig.interval(0.0, 10.0)), [
+      0.0,
+      10.0,
+    ]),
+    fig.ResolvedAxis(2, fig.NumericalDomain(fig.interval(0.0, 100.0)), [
+      0.0,
+      100.0,
+    ]),
+  ]
+
+  let assert [geometry.Text(_, _, first, _), geometry.Text(_, _, second, _)] =
+    fig.generate_axes_labels(
+      fig.AtMinimum,
+      chart.config.axis_label_offset,
+      10.0,
+      12.0,
+      ["x", "colour", "z"],
+      [0.0, 0.0],
+      resolved_axes,
+    )
+
+  assert first == "x"
+  assert second == "z"
+}
+
+pub fn generate_axes_labels_automatic_offset_test() {
+  let chart = fig.new()
+  let resolved_axes = [
+    fig.ResolvedAxis(0, fig.NumericalDomain(fig.interval(0.0, 10.0)), [
+      0.0,
+      10.0,
+    ]),
+    fig.ResolvedAxis(1, fig.NumericalDomain(fig.interval(0.0, 100.0)), [
+      0.0,
+      100.0,
+    ]),
+  ]
+
+  let assert [geometry.Text(_, first, _, _), geometry.Text(_, second, _, _)] =
+    fig.generate_axes_labels(
+      fig.AtMinimum,
+      chart.config.axis_label_offset,
+      10.0,
+      12.0,
+      ["x", "y"],
+      [0.0, 0.0],
+      resolved_axes,
+    )
+
+  assert first.distance >. 20.0
+  assert second.distance >. first.distance
 }

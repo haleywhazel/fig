@@ -85,7 +85,7 @@ pub type ChartConfiguration {
     height: Float,
     padding: geometry.Padding,
     axis_display: AxisDisplay,
-    axis_label_offset: Float,
+    axis_label_offset: AxisLabelOffset,
     axis_label_size: Float,
     dimension_labels: List(String),
     framed: Bool,
@@ -150,6 +150,15 @@ pub type Series(shape) {
 // =============================================================================
 // PUBLIC OPAQUE TYPES
 // =============================================================================
+
+/// How the offset should be calculated for axis labels.
+///
+/// Use [`set_axis_label_offset`](#set_axis_label_offset) for custom number or
+/// by default it's automatic.
+pub opaque type AxisLabelOffset {
+  AutomaticAxisLabelOffset
+  AxisLabelOffset(offset: List(Float))
+}
 
 /// Data types, construct with [`numerical`](#numerical) or
 /// [`categorical`](#categorical). Kept opaque to let the axis type checking
@@ -405,13 +414,17 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
     generate_tick_labels(
       chart.config.axis_display,
       chart.config.ticks,
+      chart.config.tick_label_offset,
       anchor,
       resolved_axes,
     )
 
   let axis_labels =
-    generate_axis_labels(
+    generate_axes_labels(
       chart.config.axis_display,
+      chart.config.axis_label_offset,
+      chart.config.tick_label_offset,
+      chart.config.tick_label_size,
       chart.config.dimension_labels,
       anchor,
       resolved_axes,
@@ -502,7 +515,7 @@ pub fn new() -> Chart(a) {
       padding: geometry.AutoPadding,
       dimension_labels: [],
       axis_display: AtMinimum,
-      axis_label_offset: 40.0,
+      axis_label_offset: AutomaticAxisLabelOffset,
       axis_label_size: 12.0,
       framed: False,
       ticks: True,
@@ -554,6 +567,17 @@ pub fn resolve_axis(
   }
 }
 
+/// Set the axis label (e.g. labelling x-axis with x) offset automatically.
+pub fn set_automatic_axis_label_offset(chart: Chart(shape)) -> Chart(shape) {
+  Chart(
+    ..chart,
+    config: ChartConfiguration(
+      ..chart.config,
+      axis_label_offset: AutomaticAxisLabelOffset,
+    ),
+  )
+}
+
 /// Set the axis position using an [`AxisDisplay`](#AxisDisplay).
 pub fn set_axis_display(
   chart: Chart(shape),
@@ -562,6 +586,28 @@ pub fn set_axis_display(
   Chart(
     ..chart,
     config: ChartConfiguration(..chart.config, axis_display: axis_display),
+  )
+}
+
+/// Set the axis label (e.g. labelling x-axis with x) offset by a custom amount.
+///
+/// It takes a list of floats for the offset you want for each individual axes.
+///
+/// By default the offsets are computed automatically based on the space
+/// available after looking at the axis labels. In some cases, e.g. for
+/// extremely wide fonts, this computation will fail since we don't rely on
+/// measuring an actually rendered figure, just an estimation based on common
+/// sans-serif font properties.
+pub fn set_axis_label_offset(
+  chart: Chart(shape),
+  axis_label_offset: List(Float),
+) -> Chart(shape) {
+  Chart(
+    ..chart,
+    config: ChartConfiguration(
+      ..chart.config,
+      axis_label_offset: AxisLabelOffset(axis_label_offset),
+    ),
   )
 }
 
@@ -775,8 +821,11 @@ pub fn generate_axes_geometry(
 }
 
 @internal
-pub fn generate_axis_labels(
+pub fn generate_axes_labels(
   axis_display: AxisDisplay,
+  axis_label_offset: AxisLabelOffset,
+  tick_label_offset: Float,
+  tick_label_size: Float,
   dimension_labels: List(String),
   anchor: List(Float),
   resolved_axes: List(ResolvedAxis),
@@ -786,8 +835,21 @@ pub fn generate_axis_labels(
     _ -> -1.0
   }
 
-  resolved_axes
-  |> list.index_map(fn(axis, index) {
+  let label_offsets = case axis_label_offset {
+    AutomaticAxisLabelOffset -> {
+      resolved_axes
+      |> list.map(tick_label_extent(_, tick_label_size))
+      |> list.map(fn(x) {
+        // re-use tick label offset as 2nd gap
+        x +. tick_label_offset *. 2.0
+      })
+    }
+    AxisLabelOffset(offsets) -> offsets
+  }
+
+  list.zip(resolved_axes, label_offsets)
+  |> list.index_map(fn(zipped, index) {
+    let #(axis, offset) = zipped
     case label_at(dimension_labels, axis.dimension) {
       "" -> []
       label -> {
@@ -799,13 +861,16 @@ pub fn generate_axis_labels(
               for_index: index,
               with_value: { minimum +. maximum } /. 2.0,
             )),
-            offset: geometry.Point(
-              list.index_map(anchor, fn(_, other_index) {
-                case other_index == index {
-                  True -> 0.0
-                  False -> tick_sign
-                }
-              }),
+            offset: geometry.Offset(
+              direction: geometry.Point(
+                list.index_map(anchor, fn(_, other_index) {
+                  case other_index == index {
+                    True -> 0.0
+                    False -> tick_sign
+                  }
+                }),
+              ),
+              distance: offset,
             ),
             content: label,
             role: geometry.AxisLabel,
@@ -962,62 +1027,31 @@ pub fn generate_projection(
                 float.max(starting_y, ending_y),
               )
             }
-            geometry.Text(at, offset, content, geometry.TickLabel) -> {
+            geometry.Text(at, offset, content, role) -> {
               let projection.ScreenCoordinates(starting_x, starting_y, _) =
                 projection.project(projection, at)
               let projection.ScreenCoordinates(direction_x, direction_y, _) =
-                projection.project(projection, geometry.add_points(at, offset))
+                projection.project(
+                  projection,
+                  geometry.add_points(at, offset.direction),
+                )
 
               let #(x, y, unit_x, unit_y) =
                 utils.offset(
                   #(starting_x, starting_y),
                   #(direction_x, direction_y),
-                  by: chart.config.tick_size,
+                  by: offset.distance,
                 )
 
-              let width =
-                utils.text_width(content, chart.config.tick_label_size)
-
-              // 1.2 takes ascenders & descenders into account
-              let height = chart.config.tick_label_size *. 1.2
-
-              // text-anchor
-              let x_fraction = case unit_x {
-                unit_x if unit_x <. -0.1 -> 1.0
-                unit_x if unit_x <. 0.1 -> 0.5
-                _ -> 0.0
+              let size = case role {
+                geometry.AxisLabel -> chart.config.axis_label_size
+                geometry.TickLabel -> chart.config.tick_label_size
               }
 
-              // dominant-baseline
-              let y_fraction = case unit_y {
-                unit_y if unit_y <. -0.1 -> 1.0
-                unit_y if unit_y <. 0.1 -> 0.5
-                _ -> 0.0
-              }
-
-              let minimum_x = x -. width *. x_fraction
-              let minimum_y = y -. height *. y_fraction
-
-              #(minimum_x, minimum_y, minimum_x +. width, minimum_y +. height)
-            }
-            geometry.Text(at, offset, content, geometry.AxisLabel) -> {
-              let projection.ScreenCoordinates(starting_x, starting_y, _) =
-                projection.project(projection, at)
-              let projection.ScreenCoordinates(direction_x, direction_y, _) =
-                projection.project(projection, geometry.add_points(at, offset))
-
-              let #(x, y, unit_x, unit_y) =
-                utils.offset(
-                  #(starting_x, starting_y),
-                  #(direction_x, direction_y),
-                  by: chart.config.axis_label_offset,
-                )
-
-              let width =
-                utils.text_width(content, chart.config.axis_label_size)
+              let width = utils.text_width(content, size)
 
               // 1.2 takes ascenders & descenders into account
-              let height = chart.config.axis_label_size *. 1.2
+              let height = size *. 1.2
 
               // text-anchor
               let x_fraction = case unit_x {
@@ -1091,6 +1125,7 @@ pub fn generate_projection(
 pub fn generate_tick_labels(
   axis_display: AxisDisplay,
   ticks: Bool,
+  tick_label_offset: Float,
   anchor: List(Float),
   resolved_axes: List(ResolvedAxis),
 ) -> List(geometry.Geometry) {
@@ -1104,18 +1139,7 @@ pub fn generate_tick_labels(
     _, True ->
       resolved_axes
       |> list.index_map(fn(resolved_axis, index) {
-        let tick_step = case resolved_axis.ticks {
-          [] | [_] -> 0.0
-          [x, y] | [x, y, ..] -> y -. x
-        }
-
-        let decimals = case tick_step {
-          _ if tick_step >=. 1.0 -> 0
-          _ -> {
-            float.ceiling(0.0 -. utils.log10(tick_step))
-            |> float.round
-          }
-        }
+        let decimals = tick_decimals(resolved_axis.ticks)
 
         resolved_axis.ticks
         |> list.map(fn(tick) {
@@ -1125,13 +1149,16 @@ pub fn generate_tick_labels(
               for_index: index,
               with_value: tick,
             )),
-            offset: geometry.Point(
-              list.index_map(anchor, fn(_, other_index) {
-                case other_index == index {
-                  True -> 0.0
-                  False -> tick_sign
-                }
-              }),
+            offset: geometry.Offset(
+              direction: geometry.Point(
+                list.index_map(anchor, fn(_, other_index) {
+                  case other_index == index {
+                    True -> 0.0
+                    False -> tick_sign
+                  }
+                }),
+              ),
+              distance: tick_label_offset,
             ),
             content: tick_label_content(resolved_axis.domain, tick, decimals),
             role: geometry.TickLabel,
@@ -1419,4 +1446,30 @@ fn select_coordinates(
           select_coordinates(remaining_dimensions, resolved_axes, dimension + 1)
       }
   }
+}
+
+fn tick_decimals(ticks: List(Float)) -> Int {
+  let tick_step = case ticks {
+    [] | [_] -> 0.0
+    [x, y] | [x, y, ..] -> y -. x
+  }
+
+  case tick_step {
+    _ if tick_step >=. 1.0 -> 0
+    _ ->
+      float.ceiling(0.0 -. utils.log10(tick_step))
+      |> float.round
+  }
+}
+
+// the extent that an axis goes, used for auto label offsetting
+fn tick_label_extent(axis: ResolvedAxis, tick_label_size: Float) -> Float {
+  let decimals = tick_decimals(axis.ticks)
+
+  axis.ticks
+  |> list.fold(0.0, fn(widest, tick) {
+    tick_label_content(axis.domain, tick, decimals)
+    |> utils.text_width(tick_label_size)
+    |> float.max(widest)
+  })
 }
