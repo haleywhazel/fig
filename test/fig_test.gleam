@@ -169,8 +169,8 @@ pub fn numerical_positional_axis_test() {
   let domain = fig.NumericalDomain(fig.interval(-95.0, -89.0))
   let channel = fig.PositionalChannel(2)
 
-  assert fig.resolve_axis(domain, channel)
-    == fig.ResolvedAxis(fig.NumericalDomain(fig.interval(-100.0, -80.0)), [
+  assert fig.resolve_axis(domain, channel, 0)
+    == fig.ResolvedAxis(0, fig.NumericalDomain(fig.interval(-100.0, -80.0)), [
       -100.0,
       -90.0,
       -80.0,
@@ -181,8 +181,8 @@ pub fn categorical_positional_axis_test() {
   let domain = fig.CategoricalDomain(["a", "b", "c"])
   let channel = fig.PositionalChannel(2)
 
-  assert fig.resolve_axis(domain, channel)
-    == fig.ResolvedAxis(domain, [
+  assert fig.resolve_axis(domain, channel, 0)
+    == fig.ResolvedAxis(0, domain, [
       0.0,
       1.0,
       2.0,
@@ -303,10 +303,10 @@ pub fn generate_framed_geometry_test() {
 
 pub fn generate_ticks_geometry_test() {
   let resolved_axes = [
-    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 1.0)), [
+    fig.ResolvedAxis(0, fig.NumericalDomain(fig.interval(0.0, 1.0)), [
       0.0, 0.5, 1.0,
     ]),
-    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 1.0)), [0.0, 1.0]),
+    fig.ResolvedAxis(1, fig.NumericalDomain(fig.interval(0.0, 1.0)), [0.0, 1.0]),
   ]
 
   assert fig.generate_ticks_geometry(
@@ -362,8 +362,10 @@ pub fn generate_ticks_geometry_test() {
 
 pub fn generate_grid_geometry_test() {
   let resolved_axes = [
-    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 10.0)), [0.0, 10.0]),
-    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 100.0)), [50.0]),
+    fig.ResolvedAxis(0, fig.NumericalDomain(fig.interval(0.0, 10.0)), [
+      0.0, 10.0,
+    ]),
+    fig.ResolvedAxis(1, fig.NumericalDomain(fig.interval(0.0, 100.0)), [50.0]),
   ]
 
   assert fig.generate_grid_geometry(
@@ -419,8 +421,8 @@ pub fn categorical_tick_label_content_test() {
 
 pub fn generate_tick_labels_categorical_test() {
   let resolved_axes = [
-    fig.ResolvedAxis(fig.CategoricalDomain(["alpha", "beta"]), [0.0, 1.0]),
-    fig.ResolvedAxis(fig.NumericalDomain(fig.interval(0.0, 1.0)), [0.0, 1.0]),
+    fig.ResolvedAxis(0, fig.CategoricalDomain(["alpha", "beta"]), [0.0, 1.0]),
+    fig.ResolvedAxis(1, fig.NumericalDomain(fig.interval(0.0, 1.0)), [0.0, 1.0]),
   ]
 
   assert fig.generate_tick_labels(
@@ -466,7 +468,7 @@ pub fn generate_projection_fixed_padding_test() {
     fig.new() |> fig.set_padding(geometry.Padding(20.0, 20.0, 20.0, 20.0))
 
   let projection =
-    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [])
+    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [], [])
 
   assert projection.project(projection, geometry.Point([0.0, 0.0]))
     == projection.ScreenCoordinates(20.0, 380.0, 0.0)
@@ -476,7 +478,7 @@ pub fn generate_projection_auto_padding_test() {
   let chart = fig.new() |> fig.set_padding(geometry.AutoPadding)
 
   let projection =
-    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [])
+    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [], [])
 
   assert projection.project(projection, geometry.Point([0.0, 0.0]))
     == projection.ScreenCoordinates(10.0, 390.0, 0.0)
@@ -494,7 +496,7 @@ pub fn generate_projection_measures_labels_test() {
     )
 
   let projection =
-    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [label])
+    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [label], [])
 
   let projection.ScreenCoordinates(x, _, _) =
     projection.project(projection, geometry.Point([0.0, 0.0]))
@@ -505,7 +507,7 @@ pub fn generate_projection_measures_labels_test() {
 pub fn generate_projection_caps_padding_test() {
   let chart =
     fig.new()
-    |> fig.set_area(#(100.0, 100.0))
+    |> fig.set_area(100.0, 100.0)
     |> fig.set_padding(geometry.AutoPadding)
 
   // a very very very very very long label
@@ -518,7 +520,7 @@ pub fn generate_projection_caps_padding_test() {
     )
 
   let projection =
-    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [label])
+    fig.generate_projection(chart, [#(0.0, 1.0), #(0.0, 1.0)], [], [label], [])
 
   let projection.ScreenCoordinates(x, _, _) =
     projection.project(projection, geometry.Point([0.0, 0.0]))

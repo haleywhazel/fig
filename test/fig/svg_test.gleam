@@ -17,7 +17,7 @@ pub fn to_svg_empty_chart_test() {
 pub fn to_svg_view_box_test() {
   let rendered =
     fig.new()
-    |> fig.set_area(#(300.0, 150.0))
+    |> fig.set_area(300.0, 150.0)
     |> svg.to_svg
 
   assert string.contains(rendered, "viewBox=\"0 0 300 150\"")

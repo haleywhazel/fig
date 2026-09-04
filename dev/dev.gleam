@@ -20,6 +20,7 @@ pub fn main() -> Nil {
       fig.line(),
       fig.numerical([#(0.0, 4.0), #(1.0, 1.0), #(2.0, 3.0), #(3.0, 0.5)]),
     ))
+    |> fig.set_dimension_labels(["x", "y"])
     |> fig.generate
 
   case simplifile.write(to: output_path, contents: svg.to_svg(chart)) {

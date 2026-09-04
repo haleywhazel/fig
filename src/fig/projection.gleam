@@ -80,7 +80,8 @@ pub fn isometric() -> View {
 /// Build a projection for a chart.
 pub fn new(
   bounds bounds: List(#(Float, Float)),
-  area area: #(Float, Float),
+  width width: Float,
+  height height: Float,
   padding padding: geometry.Padding,
   view view: View,
 ) -> Projection {
@@ -96,16 +97,27 @@ pub fn new(
 
   // padding larger than the area would give a negative extent, which flips
   // the axis direction and renders the chart inside out
-  let width = float.max(area.0 -. padding_left -. padding_right, minimum_extent)
-  let height =
-    float.max(area.1 -. padding_top -. padding_bottom, minimum_extent)
+  let smaller_width =
+    float.max(width -. padding_left -. padding_right, minimum_extent)
+  let smaller_height =
+    float.max(height -. padding_top -. padding_bottom, minimum_extent)
 
   let #(origin, directions) = case list.length(bounds) {
-    2 -> #(ScreenCoordinates(padding_left, area.1 -. padding_bottom, 0.0), [
-      ScreenCoordinates(width, 0.0, 0.0),
-      ScreenCoordinates(0.0, 0.0 -. height, 0.0),
+    // the origin is the bottom left of the plot area, measured against the
+    // full chart height; the directions span the plot area, so they use the
+    // padded extents instead
+    2 -> #(ScreenCoordinates(padding_left, height -. padding_bottom, 0.0), [
+      ScreenCoordinates(smaller_width, 0.0, 0.0),
+      ScreenCoordinates(0.0, 0.0 -. smaller_height, 0.0),
     ])
-    _ -> fit(view.directions, padding_left, padding_top, width, height)
+    _ ->
+      fit(
+        view.directions,
+        padding_left,
+        padding_top,
+        smaller_width,
+        smaller_height,
+      )
   }
 
   Projection(

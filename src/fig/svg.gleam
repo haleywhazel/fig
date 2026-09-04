@@ -48,7 +48,7 @@ pub opaque type SvgElements {
 /// Create an SVG string from a chart with generated geometries. Note that if
 /// no geometries have been generated, it's just be an empty SVG.
 pub fn to_svg(chart: fig.Chart(shape)) -> String {
-  let #(width, height) = chart.area
+  let #(width, height) = #(chart.config.width, chart.config.height)
 
   let body =
     to_svg_elements(
@@ -203,6 +203,42 @@ pub fn to_svg_elements(
           role: geometry.TickLabel,
         )
       }
+      geometry.Text(at, direction, content, geometry.AxisLabel) -> {
+        let starting_coordinates = project(at)
+        let offset = project(geometry.add_points(at, direction))
+        let #(x, y, unit_x, unit_y) =
+          utils.offset(
+            #(starting_coordinates.x, starting_coordinates.y),
+            #(offset.x, offset.y),
+            by: config.axis_label_offset,
+          )
+
+        let text_anchor = case unit_x {
+          unit_x if unit_x <. -0.1 -> "end"
+          unit_x if unit_x <. 0.1 -> "middle"
+          _ -> "start"
+        }
+
+        let dominant_baseline = case unit_y {
+          // text-bottom
+          unit_y if unit_y <. -0.1 -> "alphabetic"
+          // middle
+          unit_y if unit_y <. 0.1 -> "central"
+          // text-top
+          _ -> "hanging"
+        }
+
+        Text(
+          depth: starting_coordinates.depth,
+          x: round(x),
+          y: round(y),
+          size: round(config.axis_label_size),
+          text_anchor: text_anchor,
+          dominant_baseline: dominant_baseline,
+          content: content,
+          role: geometry.AxisLabel,
+        )
+      }
     }
   })
 }
@@ -234,11 +270,11 @@ fn to_svg_string(element: SvgElements) -> String {
       "<path d=\""
       <> d
       <> "\" class=\""
-      <> geometry.role_class(role)
+      <> geometry.geometry_role_class(role)
       <> "\" fill=\"none\" stroke=\""
       <> default_stroke(role)
       <> "\" stroke-width=\"1\"/>"
-    Text(_depth, x, y, size, text_anchor, dominant_baseline, content, _role) ->
+    Text(_depth, x, y, size, text_anchor, dominant_baseline, content, role) ->
       "<text x=\""
       <> x
       <> "\" y=\""
@@ -249,6 +285,8 @@ fn to_svg_string(element: SvgElements) -> String {
       <> text_anchor
       <> "\" dominant-baseline=\""
       <> dominant_baseline
+      <> "\" class=\""
+      <> geometry.text_role_class(role)
       <> "\">"
       <> escape_text(content)
       <> "</text>"

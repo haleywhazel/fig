@@ -55,6 +55,9 @@ pub type Point {
 }
 
 pub type TextRole {
+  AxisLabel
+  // ChartTitle
+  // LegendLabel
   TickLabel
 }
 
@@ -64,6 +67,17 @@ pub type TextRole {
 
 pub fn add_points(point1: Point, point2: Point) {
   Point(list.map2(point1.coordinates, point2.coordinates, float.add))
+}
+
+/// The CSS class name for a role.
+pub fn geometry_role_class(role: GeometryRole) -> String {
+  case role {
+    Axis -> "fig-axis"
+    Display -> "fig-display"
+    Grid -> "fig-grid"
+    Series(index) -> "fig-series fig-series-" <> int.to_string(index)
+    TickMark -> "fig-tick"
+  }
 }
 
 /// Create a line.
@@ -76,12 +90,9 @@ pub fn line(
 }
 
 /// The CSS class name for a role.
-pub fn role_class(role: GeometryRole) -> String {
+pub fn text_role_class(role: TextRole) -> String {
   case role {
-    Axis -> "fig-axis"
-    Display -> "fig-display"
-    Grid -> "fig-grid"
-    Series(index) -> "fig-series fig-series-" <> int.to_string(index)
-    TickMark -> "fig-tick"
+    AxisLabel -> "fig-axis-label"
+    TickLabel -> "fig-tick-label"
   }
 }

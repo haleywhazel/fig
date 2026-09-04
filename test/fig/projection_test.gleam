@@ -33,7 +33,8 @@ pub fn project_test() {
   let projection =
     projection.new(
       bounds: [#(0.0, 10.0), #(0.0, 100.0)],
-      area: #(640.0, 400.0),
+      width: 640.0,
+      height: 400.0,
       padding: geometry.Padding(20.0, 20.0, 20.0, 20.0),
       view: projection.view([]),
     )
@@ -50,7 +51,8 @@ pub fn project_degenerate_axis_test() {
   let projection =
     projection.new(
       bounds: [#(5.0, 5.0), #(0.0, 10.0)],
-      area: #(640.0, 400.0),
+      width: 640.0,
+      height: 400.0,
       padding: geometry.Padding(20.0, 20.0, 20.0, 20.0),
       view: projection.view([]),
     )
@@ -63,7 +65,8 @@ pub fn project_isometric_test() {
   let projection =
     projection.new(
       bounds: [#(0.0, 1.0), #(0.0, 1.0), #(0.0, 1.0)],
-      area: #(640.0, 400.0),
+      width: 640.0,
+      height: 400.0,
       padding: geometry.Padding(20.0, 20.0, 20.0, 20.0),
       view: projection.isometric(),
     )

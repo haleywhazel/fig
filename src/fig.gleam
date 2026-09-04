@@ -67,7 +67,6 @@ pub type Channel {
 pub type Chart(shape) {
   Chart(
     series: List(Series(shape)),
-    area: #(Float, Float),
     projection: projection.Projection,
     geometries: List(geometry.Geometry),
     view: projection.View,
@@ -82,8 +81,13 @@ pub type Chart(shape) {
 /// fields.
 pub type ChartConfiguration {
   ChartConfiguration(
+    width: Float,
+    height: Float,
     padding: geometry.Padding,
     axis_display: AxisDisplay,
+    axis_label_offset: Float,
+    axis_label_size: Float,
+    dimension_labels: List(String),
     framed: Bool,
     ticks: Bool,
     grid: Bool,
@@ -120,7 +124,7 @@ pub type Positional
 /// A single resolved axis with a [`Domain`](#Domain) and the ticks as float
 /// positions associated with it.
 pub type ResolvedAxis {
-  ResolvedAxis(domain: Domain, ticks: List(Float))
+  ResolvedAxis(dimension: Int, domain: Domain, ticks: List(Float))
 }
 
 /// A data series.
@@ -266,22 +270,6 @@ pub fn datum() -> Datum(Empty) {
   Datum([])
 }
 
-/// Takes a datum and then adds an additional value to the list within datum.
-/// For custom data types, this can be chained both on top of an existing one
-/// or to begin with, use (`datum`)[#datum]
-///
-/// Example with two categorical values of a single datum:
-///
-/// ```
-/// datum() |> with(category(x)) |> with(category(y))
-/// ```
-pub fn with(
-  datum: Datum(tail),
-  dimension: Dimension(head),
-) -> Datum(And(Axis(head, channel), tail)) {
-  Datum([dimension.value, ..datum.dimensions])
-}
-
 /// Given a list of series, combine the domains across the series to give a
 /// list of [`Domain`](#Domain) for each individual dimension.
 pub fn combine_domains(series: List(Series(shape))) -> List(Domain) {
@@ -367,11 +355,12 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
   // resolved_axes only returns positional channels
   let resolved_axes =
     list.zip(extents, drawing_requirements.channels)
-    |> list.filter_map(with: fn(dimension) {
-      let #(domain, channel) = dimension
+    |> list.index_map(fn(pair, dimension) { #(dimension, pair) })
+    |> list.filter_map(with: fn(entry) {
+      let #(dimension, #(domain, channel)) = entry
       case channel {
         // only positional channels become axes; colour and size will not
-        PositionalChannel(_) -> Ok(resolve_axis(domain, channel))
+        PositionalChannel(_) -> Ok(resolve_axis(domain, channel, dimension))
       }
     })
 
@@ -420,6 +409,14 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
       resolved_axes,
     )
 
+  let axis_labels =
+    generate_axis_labels(
+      chart.config.axis_display,
+      chart.config.dimension_labels,
+      anchor,
+      resolved_axes,
+    )
+
   // TODO: add series options
   let series_geometry =
     chart.series
@@ -440,7 +437,7 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
 
   // set projection
   let projection =
-    generate_projection(chart, bounds, ticks_geometry, tick_labels)
+    generate_projection(chart, bounds, ticks_geometry, tick_labels, axis_labels)
 
   Chart(
     ..chart,
@@ -451,6 +448,7 @@ pub fn generate(chart: Chart(shape)) -> Chart(shape) {
       axes_geometry,
       ticks_geometry,
       tick_labels,
+      axis_labels,
       series_geometry,
     ]),
   )
@@ -495,13 +493,17 @@ pub fn line() -> Drawing(
 pub fn new() -> Chart(a) {
   Chart(
     series: [],
-    area: #(640.0, 400.0),
     projection: projection.empty_projection(),
     geometries: [],
     view: projection.isometric(),
     config: ChartConfiguration(
+      width: 640.0,
+      height: 400.0,
       padding: geometry.AutoPadding,
+      dimension_labels: [],
       axis_display: AtMinimum,
+      axis_label_offset: 40.0,
+      axis_label_size: 12.0,
       framed: False,
       ticks: True,
       grid: True,
@@ -532,36 +534,19 @@ pub fn numerical(
   )
 }
 
-/// Get tick label content based on domain, the actual, tick, and d.p. to round
-/// to
-@internal
-pub fn tick_label_content(
-  domain: Domain,
-  tick: Float,
-  decimals: Int,
-) -> String {
-  case domain {
-    NumericalDomain(_) -> utils.round_to_string(tick, decimals)
-    CategoricalDomain(categories) ->
-      categories
-      |> list.drop(float.round(tick))
-      |> list.first
-      // shouldn't be reachable
-      |> result.unwrap("")
-  }
-}
-
 pub fn resolve_axis(
   domain domain: Domain,
   with_channel channel: Channel,
+  for_dimension dimension: Int,
 ) -> ResolvedAxis {
   case domain, channel {
     NumericalDomain(interval), PositionalChannel(rough_tick_count) -> {
       let #(interval, recipe) = generate_ticks(interval, rough_tick_count)
-      ResolvedAxis(NumericalDomain(interval), tick_values(recipe))
+      ResolvedAxis(dimension, NumericalDomain(interval), tick_values(recipe))
     }
     CategoricalDomain(categories), PositionalChannel(_) -> {
       ResolvedAxis(
+        dimension,
         domain,
         list.index_map(categories, fn(_, position) { int.to_float(position) }),
       )
@@ -580,9 +565,35 @@ pub fn set_axis_display(
   )
 }
 
-/// Set the area for the chart as `#(width, height)`
-pub fn set_area(chart: Chart(shape), area: #(Float, Float)) -> Chart(shape) {
-  Chart(..chart, area: area)
+/// Set the width and height
+pub fn set_area(
+  chart: Chart(shape),
+  width: Float,
+  height: Float,
+) -> Chart(shape) {
+  Chart(
+    ..chart,
+    config: ChartConfiguration(..chart.config, width: width, height: height),
+  )
+}
+
+/// Set the dimension labels. For categorical dimensions (e.g. bar charts), it
+/// is still useful to mention what the categories belong to.
+///
+/// This should have the same length as the length of each datum. While it's
+/// good practice to label all dimensions, you can set a single dimension label
+/// just as an empty string.
+pub fn set_dimension_labels(
+  chart: Chart(shape),
+  labels dimension_labels: List(String),
+) -> Chart(shape) {
+  Chart(
+    ..chart,
+    config: ChartConfiguration(
+      ..chart.config,
+      dimension_labels: dimension_labels,
+    ),
+  )
 }
 
 /// Set global font family
@@ -604,6 +615,11 @@ pub fn set_frame(chart: Chart(shape), framed: Bool) -> Chart(shape) {
 /// Sets whether or not to display a grid.
 pub fn set_grid(chart: Chart(shape), grid: Bool) -> Chart(shape) {
   Chart(..chart, config: ChartConfiguration(..chart.config, grid: grid))
+}
+
+/// Set the height.
+pub fn set_height(chart: Chart(shape), height: Float) -> Chart(shape) {
+  Chart(..chart, config: ChartConfiguration(..chart.config, height: height))
 }
 
 /// Sets the padding to fixed values.
@@ -653,6 +669,11 @@ pub fn set_ticks(chart: Chart(shape), ticks: Bool) -> Chart(shape) {
   Chart(..chart, config: ChartConfiguration(..chart.config, ticks: ticks))
 }
 
+/// Set the width.
+pub fn set_width(chart: Chart(shape), width: Float) -> Chart(shape) {
+  Chart(..chart, config: ChartConfiguration(..chart.config, width: width))
+}
+
 /// Retrieve tick values for a numerical line based on a
 /// [`TickRecipe`](#TickRecipe)
 pub fn tick_values(tick_recipe: TickRecipe) -> List(Float) {
@@ -665,6 +686,22 @@ pub fn tick_values(tick_recipe: TickRecipe) -> List(Float) {
         int.to_float(tick_recipe.first_index + offset) /. divisor
     }
   })
+}
+
+/// Takes a datum and then adds an additional value to the list within datum.
+/// For custom data types, this can be chained both on top of an existing one
+/// or to begin with, use (`datum`)[#datum]
+///
+/// Example with two categorical values of a single datum:
+///
+/// ```
+/// datum() |> with(category(x)) |> with(category(y))
+/// ```
+pub fn with(
+  datum: Datum(tail),
+  dimension: Dimension(head),
+) -> Datum(And(Axis(head, channel), tail)) {
+  Datum([dimension.value, ..datum.dimensions])
 }
 
 // =============================================================================
@@ -713,7 +750,7 @@ pub fn generate_axes_geometry(
   axis_display: AxisDisplay,
   anchor: List(Float),
   bounds: List(#(Float, Float)),
-) {
+) -> List(geometry.Geometry) {
   case axis_display {
     Hidden -> []
     _ ->
@@ -735,6 +772,49 @@ pub fn generate_axes_geometry(
         )
       })
   }
+}
+
+@internal
+pub fn generate_axis_labels(
+  axis_display: AxisDisplay,
+  dimension_labels: List(String),
+  anchor: List(Float),
+  resolved_axes: List(ResolvedAxis),
+) -> List(geometry.Geometry) {
+  let tick_sign = case axis_display {
+    AtMaximum -> 1.0
+    _ -> -1.0
+  }
+
+  resolved_axes
+  |> list.index_map(fn(axis, index) {
+    case label_at(dimension_labels, axis.dimension) {
+      "" -> []
+      label -> {
+        let #(minimum, maximum) = domain_bounds(axis.domain)
+        [
+          geometry.Text(
+            at: geometry.Point(replace_with_index(
+              anchor,
+              for_index: index,
+              with_value: { minimum +. maximum } /. 2.0,
+            )),
+            offset: geometry.Point(
+              list.index_map(anchor, fn(_, other_index) {
+                case other_index == index {
+                  True -> 0.0
+                  False -> tick_sign
+                }
+              }),
+            ),
+            content: label,
+            role: geometry.AxisLabel,
+          ),
+        ]
+      }
+    }
+  })
+  |> list.flatten
 }
 
 @internal
@@ -840,7 +920,8 @@ pub fn generate_projection(
   bounds: List(#(Float, Float)),
   ticks_geometry: List(geometry.Geometry),
   tick_labels: List(geometry.Geometry),
-) {
+  axis_labels: List(geometry.Geometry),
+) -> projection.Projection {
   case chart.config.padding {
     // first estimate how much we go out of bounds for for zero padding if it's
     // auto padding, then adjust the padding based on that
@@ -848,13 +929,14 @@ pub fn generate_projection(
       let projection =
         projection.new(
           bounds: bounds,
-          area: chart.area,
+          width: chart.config.width,
+          height: chart.config.height,
           padding: chart.config.padding,
           view: chart.view,
         )
 
       let #(min_x, min_y, max_x, max_y) =
-        list.flatten([ticks_geometry, tick_labels])
+        list.flatten([ticks_geometry, tick_labels, axis_labels])
         |> list.map(fn(geometry) {
           case geometry {
             geometry.Tick(at, direction, _) -> {
@@ -895,7 +977,47 @@ pub fn generate_projection(
 
               let width =
                 utils.text_width(content, chart.config.tick_label_size)
-              let height = chart.config.tick_label_size
+
+              // 1.2 takes ascenders & descenders into account
+              let height = chart.config.tick_label_size *. 1.2
+
+              // text-anchor
+              let x_fraction = case unit_x {
+                unit_x if unit_x <. -0.1 -> 1.0
+                unit_x if unit_x <. 0.1 -> 0.5
+                _ -> 0.0
+              }
+
+              // dominant-baseline
+              let y_fraction = case unit_y {
+                unit_y if unit_y <. -0.1 -> 1.0
+                unit_y if unit_y <. 0.1 -> 0.5
+                _ -> 0.0
+              }
+
+              let minimum_x = x -. width *. x_fraction
+              let minimum_y = y -. height *. y_fraction
+
+              #(minimum_x, minimum_y, minimum_x +. width, minimum_y +. height)
+            }
+            geometry.Text(at, offset, content, geometry.AxisLabel) -> {
+              let projection.ScreenCoordinates(starting_x, starting_y, _) =
+                projection.project(projection, at)
+              let projection.ScreenCoordinates(direction_x, direction_y, _) =
+                projection.project(projection, geometry.add_points(at, offset))
+
+              let #(x, y, unit_x, unit_y) =
+                utils.offset(
+                  #(starting_x, starting_y),
+                  #(direction_x, direction_y),
+                  by: chart.config.axis_label_offset,
+                )
+
+              let width =
+                utils.text_width(content, chart.config.axis_label_size)
+
+              // 1.2 takes ascenders & descenders into account
+              let height = chart.config.axis_label_size *. 1.2
 
               // text-anchor
               let x_fraction = case unit_x {
@@ -922,29 +1044,33 @@ pub fn generate_projection(
             }
           }
         })
-        |> list.fold(#(0.0, 0.0, chart.area.0, chart.area.1), fn(acc, bound) {
-          #(
-            float.min(acc.0, bound.0),
-            float.min(acc.1, bound.1),
-            float.max(acc.2, bound.2),
-            float.max(acc.3, bound.3),
-          )
-        })
+        |> list.fold(
+          #(0.0, 0.0, chart.config.width, chart.config.height),
+          fn(acc, bound) {
+            #(
+              float.min(acc.0, bound.0),
+              float.min(acc.1, bound.1),
+              float.max(acc.2, bound.2),
+              float.max(acc.3, bound.3),
+            )
+          },
+        )
 
       projection.new(
-        bounds:,
-        area: chart.area,
+        bounds: bounds,
+        width: chart.config.width,
+        height: chart.config.height,
         padding: geometry.Padding(
-          cap_padding(10.0 -. float.min(0.0, min_y), chart.area.1),
+          cap_padding(10.0 -. float.min(0.0, min_y), chart.config.height),
           cap_padding(
-            10.0 +. float.max(0.0, max_x -. chart.area.0),
-            chart.area.0,
+            10.0 +. float.max(0.0, max_x -. chart.config.width),
+            chart.config.width,
           ),
           cap_padding(
-            10.0 +. float.max(0.0, max_y -. chart.area.1),
-            chart.area.1,
+            10.0 +. float.max(0.0, max_y -. chart.config.height),
+            chart.config.height,
           ),
-          cap_padding(10.0 -. float.min(0.0, min_x), chart.area.0),
+          cap_padding(10.0 -. float.min(0.0, min_x), chart.config.width),
         ),
         view: chart.view,
       )
@@ -952,8 +1078,9 @@ pub fn generate_projection(
     // strict padding
     padding ->
       projection.new(
-        bounds:,
-        area: chart.area,
+        bounds: bounds,
+        width: chart.config.width,
+        height: chart.config.height,
         padding: padding,
         view: chart.view,
       )
@@ -1056,9 +1183,33 @@ pub fn generate_ticks_geometry(
   }
 }
 
+/// Get tick label content based on domain, the actual, tick, and d.p. to round
+/// to
+@internal
+pub fn tick_label_content(
+  domain: Domain,
+  tick: Float,
+  decimals: Int,
+) -> String {
+  case domain {
+    NumericalDomain(_) -> utils.round_to_string(tick, decimals)
+    CategoricalDomain(categories) ->
+      categories
+      |> list.drop(float.round(tick))
+      |> list.first
+      // shouldn't be reachable
+      |> result.unwrap("")
+  }
+}
+
 // =============================================================================
 // PRIVATE FUNCTIONS
 // =============================================================================
+
+// not optimal for linked lists but still useful sometimes
+fn at(items: List(a), index: Int) -> Result(a, Nil) {
+  items |> list.drop(index) |> list.first
+}
 
 fn cap_padding(padding: Float, extent: Float) -> Float {
   // cap padding at 0.4 percent of the width; stuff that don't fit gets clipped
@@ -1081,23 +1232,27 @@ fn category_of(value: Value) -> Result(String, Nil) {
   }
 }
 
-// datum -> plain numbers in axis order
+// datum -> plain numbers, one per positional axis
 fn coordinates_of(
   datum: Datum(shape),
   resolved_axes: List(ResolvedAxis),
 ) -> List(Float) {
-  list.map2(list.reverse(datum.dimensions), resolved_axes, fn(value, axis) {
-    case value, axis.domain {
-      Number(number), _ -> number
-      Category(category), CategoricalDomain(categories) ->
-        categories
-        |> list.take_while(fn(other) { other != category })
-        |> list.length
-        |> int.to_float
-      // should be unreachable
-      Category(_), _ -> 0.0
-    }
-  })
+  select_coordinates(list.reverse(datum.dimensions), resolved_axes, 0)
+}
+
+// A single value as a position along its axis; categories are their index
+// within the domain.
+fn coordinate_of(value: Value, axis: ResolvedAxis) -> Float {
+  case value, axis.domain {
+    Number(number), _ -> number
+    Category(category), CategoricalDomain(categories) ->
+      categories
+      |> list.take_while(fn(other) { other != category })
+      |> list.length
+      |> int.to_float
+    // should be unreachable
+    Category(_), _ -> 0.0
+  }
 }
 
 fn generate_ticks_recursive(
@@ -1202,6 +1357,10 @@ fn generate_tick_recipe(interval: Interval, rough_count: Int) -> TickRecipe {
   }
 }
 
+fn label_at(dimension_labels: List(String), index: Int) -> String {
+  dimension_labels |> at(index) |> result.unwrap("")
+}
+
 fn number_of(value: Value) -> Result(Float, Nil) {
   case value {
     Number(number) -> Ok(number)
@@ -1236,4 +1395,28 @@ fn replace_with_index(
       False -> v
     }
   })
+}
+
+// select only the dimensions that become axes
+fn select_coordinates(
+  dimensions: List(Value),
+  resolved_axes: List(ResolvedAxis),
+  dimension: Int,
+) -> List(Float) {
+  case dimensions, resolved_axes {
+    [], _ | _, [] -> []
+    [value, ..remaining_dimensions], [axis, ..remaining_axes] ->
+      case dimension == axis.dimension {
+        True -> [
+          coordinate_of(value, axis),
+          ..select_coordinates(
+            remaining_dimensions,
+            remaining_axes,
+            dimension + 1,
+          )
+        ]
+        False ->
+          select_coordinates(remaining_dimensions, resolved_axes, dimension + 1)
+      }
+  }
 }
